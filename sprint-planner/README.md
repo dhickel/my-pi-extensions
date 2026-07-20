@@ -59,9 +59,15 @@ Read-only structured validation of a sprint-planner-generated plan directory. Re
 
 Versioned execution-evidence persistence with three actions:
 
-- **`start`** — creates a distinct execution-only directory (`exec-*`), freezes the source plan with immutable hashes, captures the orchestration snapshot, acquires an exclusive lease, and returns the immutable `runId` and initial revision.
-- **`checkpoint`** — appends implementation, phase-validation, or integration-validation evidence. Requires `expectedRevision`; stale revisions are rejected deterministically. Each accepted checkpoint increments the revision.
-- **`finish`** — transitions the record to a terminal state (`completed`, `blocked`, `interrupted`). Releases the lease on clean transitions.
+- **`start`** — creates a distinct execution-only directory (`exec-*`), freezes the source plan with immutable hashes, captures the orchestration snapshot, acquires an exclusive lease, and returns the immutable `runId`, initial revision, and persisted source descriptor (canonical source path, aggregate digest, and per-file hashes and byte counts).
+- **`checkpoint`** — appends implementation, phase-validation, or integration-validation evidence. Requires `expectedRevision`; stale revisions are rejected deterministically. Each accepted checkpoint increments the revision. Changed paths outside declared targets are persisted in `outsideDeclaredTargets` and returned as structured plan-drift warnings rather than rejected.
+- **`finish`** — transitions the record to a terminal state (`completed`, `blocked`, `interrupted`). Releases the lease on clean transitions. Completion requires every phase's latest validation and the latest integration validation to be `PASS`.
+
+New execution records use schema version 2. Phase and integration validation histories retain numbered attempts; `BLOCKED` remains durable but keeps the record active and retryable, disjoint sibling evidence remains accepted, and dependents wait until each dependency's latest verdict is `PASS`. Version-1 records remain available for strict read-only parsing and diagnosis.
+
+Checkpoint phase names accept both `phase-NN-slug` and `phase-NN-slug.md`; the canonical filename with `.md` is always used internally. Unknown names report the valid canonical phase list.
+
+`start.sourcePlanPath` is always canonical and project-relative. `start.sourcePlanningRunId` is optional provenance: use exactly `<id>` for `.internal-dev/plans/<id>` or `.internal-dev/sprints/<id>/planning`, and omit it for other layouts. It is never a path. Valid branching plans may list phases in wave traversal order that differs from phase-ledger order; the frozen record normalizes its maps to phase-ledger order without changing wave assignments.
 
 This tool persists evidence only — it never launches provider work, spawns subagents, or coordinates workers. The orchestrate skill owns those responsibilities.
 
@@ -77,7 +83,7 @@ Invoke the separate skill explicitly or ask Pi to execute a complex workflow or 
 
 The skill can interpret a user-presented workflow, checklist, plan file, or phased plan directory. Raw and other non-authoritative input defaults to sequential work; parallel execution requires dependency-ready phases with known non-overlapping write areas and no shared mutable artifacts. For a generated plan, structured `orchestration.md` is authoritative: unsafe or uncertain declared waves block rather than being silently rescheduled. A wave larger than the four-agent cap runs bounded implementation batches to terminal before bounded validation batches, without weakening its logical PASS barrier.
 
-The skill calls `sprint_validate_plan` for generated plans before starting, then `sprint_execution_record start` to freeze the source plan. It checkpoints phase and integration evidence through `sprint_execution_record checkpoint` with exact revision tracking, and finishes with `sprint_execution_record finish`. It uses the subagent tools (`subagent_spawn`, `subagent_poll`, `subagent_status`, `subagent_cancel`) for all delegated work.
+The skill calls `sprint_validate_plan` for generated plans before starting, then `sprint_execution_record start` to freeze the source plan. It checkpoints phase and integration evidence through `sprint_execution_record checkpoint` with exact revision tracking, and finishes with `sprint_execution_record finish`. Unexpected changed paths are always recorded truthfully and treated as plan drift: the skill widens its observed write set, reassesses overlap before validators and later phases, and serializes validators whose discovered write sets overlap without mutating the frozen target contract. It uses the subagent tools (`subagent_spawn`, `subagent_poll`, `subagent_status`, `subagent_cancel`) for all delegated work.
 
 Its fixed delegated model contract is:
 

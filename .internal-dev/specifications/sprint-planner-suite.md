@@ -94,7 +94,9 @@ The skill requires Pi's subagent spawn, poll, status, and cancel tools. It must 
 
 Before edits, one atomic spawn batch preflights both tuples with no-op agents. Missing models, authentication, tools, or thinking support stop execution; the skill never substitutes another tuple. One cohesive phase maps to exactly one DeepSeek `max` implementer.
 
-Every implementation wave fully settles before validation. Every phase receives an independent GPT-5.6 Sol `medium` review-and-repair agent with full edit authority. The validator inspects actual repository state, checks every criterion, repairs in-scope defects itself, reruns required checks, and returns exactly `VERDICT: PASS` or `VERDICT: BLOCKED` with evidence sections. There is no read-only validation mode, `VERDICT: REPAIR`, or separate DeepSeek repair handoff. A malformed or missing verdict is retried once, then blocks. Dependents wait for `PASS` before starting; a `BLOCKED` phase stops downstream work. After all phases pass, one GPT-5.6 Sol `medium` integration validator performs the same review-and-repair gate across the complete workflow.
+Every implementation wave fully settles before validation. Every phase receives an independent GPT-5.6 Sol `medium` review-and-repair agent with full edit authority. The validator inspects actual repository state, checks every criterion, repairs in-scope defects itself, reruns required checks, and returns exactly `VERDICT: PASS` or `VERDICT: BLOCKED` with evidence sections. There is no read-only validation mode, `VERDICT: REPAIR`, or separate DeepSeek repair handoff. A malformed or missing verdict is retried once, then blocks. A valid `BLOCKED` verdict is a durable retryable attempt: disjoint siblings may continue, the same phase may receive later validation attempts, and dependents wait until every dependency's latest verdict is `PASS`. After all phases pass, one GPT-5.6 Sol `medium` integration validator performs the same review-and-repair gate across the complete workflow.
+
+Changed-file evidence is truthful rather than target-authorized. Unexpected canonical safe paths are persisted and returned as structured plan-drift warnings; the frozen target map remains immutable. The skill widens only its observed write sets, reassesses overlap before validators or later phases, serializes validators when discovered write sets overlap, and blocks future unsafe authoritative implementation waves rather than silently changing their topology.
 
 Plans and root, implementer, phase-validator, and integration-validator reports prohibit human time, duration, effort, ETA, and calendar-schedule estimates. Operational wave language and technical machine timing remain allowed.
 
@@ -150,21 +152,26 @@ Execution records persist versioned orchestration evidence in a distinct executi
 
 ### Record Shape
 
-Version 1 records contain:
+New records use version 2. Version-1 records remain strictly parseable for read-only discovery and diagnosis but cannot accept checkpoints, manifest repair, finish, or interruption mutations.
 
 - **Immutable source descriptor**: `sourcePlanPath`, optional `sourcePlanningRunId`, an aggregate digest, and per-file hashes. Bytes and hashes are frozen at `start` and never change.
-- **Frozen orchestration snapshot**: scope size, phases, dependencies, waves, goals, write targets, and exact implementation/validation model tuples captured at record creation.
-- **Revisioned phase ledger**: each phase tracks an optional implementation evidence entry and a mandatory validator evidence entry with verdict (`PASS`/`BLOCKED`). Each evidence entry carries an agent model tuple, report, and changed-file observations (canonical path, present/deleted status, digest and byte metadata when present).
-- **Integration evidence**: a single optional evidence entry with the same shape as a phase validator, plus a verdict.
-- **Terminal state**: `active`, `completed`, `blocked`, or `interrupted`. The `interrupted` state records a shutdown reason; `blocked` records the blocker reason.
+- **Frozen orchestration snapshot**: scope size, canonical phase filenames, dependencies, waves, goals, write targets, and exact implementation/validation model tuples captured at record creation. Targets are scheduling evidence only and never mutate after start.
+- **Revisioned phase ledger**: each phase tracks one optional implementation entry and an ordered `validations` array. Every validation contains a contiguous attempt number and verdict (`PASS`/`BLOCKED`); phase status is derived from the latest attempt.
+- **Integration validation history**: integration uses the same ordered attempt model. Integration cannot begin until every phase's latest verdict is `PASS`.
+- **Changed-file evidence**: every entry carries canonical present/deleted observations and digest/byte metadata when present. Safe paths outside frozen targets are retained in `outsideDeclaredTargets`; unsafe, source-plan, and execution-record paths remain rejected.
+- **Terminal state**: `active`, `completed`, `blocked`, or `interrupted`. A checkpointed `BLOCKED` verdict does not change `active` state. `finish: blocked` records terminal blocker evidence; `finish: completed` requires latest `PASS` for every phase and integration.
 
 ### `sprint_execution_record` Tool
 
 The tool exposes three actions:
 
-- **`start`**: Creates the execution directory, freezes the source plan with immutable hashes, captures the orchestration snapshot, acquires an exclusive lease, and returns the immutable `runId` and initial revision.
-- **`checkpoint`**: Accepts `expectedRevision` and atomically appends implementation, phase-validation, or integration-validation evidence. Stale revisions are rejected deterministically. Each accepted checkpoint increments the revision.
+- **`start`**: Creates the execution directory, freezes the source plan with immutable hashes, captures the orchestration snapshot, acquires an exclusive lease, and returns the immutable `runId`, initial revision, and persisted source descriptor (canonical source path, aggregate digest, and per-file hashes and byte counts).
+- **`checkpoint`**: Accepts `expectedRevision` and atomically appends implementation, phase-validation, or integration-validation evidence. Stale revisions are rejected deterministically. Each accepted checkpoint increments the revision and returns structured warnings for accepted out-of-target paths.
 - **`finish`**: Transitions the record to a terminal state (`completed`, `blocked`, `interrupted`). Releases the lease on clean state transitions.
+
+Phase-bearing checkpoint variants accept `phase-NN-slug` or `phase-NN-slug.md`, normalize to the canonical `.md` filename, and list every valid canonical phase when lookup fails.
+
+`start.sourcePlanPath` is a canonical project-relative directory. Optional `sourcePlanningRunId` provenance is accepted only when it exactly matches `<id>` in either canonical planner publication layout: `.internal-dev/plans/<id>` or `.internal-dev/sprints/<id>/planning`. Both layouts share one typed source-identity parser (`standalone-plan`, `sprint-planning`, or `other`). Frozen orchestration maps retain phase-ledger key order even when valid wave traversal order differs; wave numbers remain authoritative and unchanged.
 
 No action launches provider work, spawns subagents, or coordinates workers. The orchestrate skill owns those responsibilities.
 

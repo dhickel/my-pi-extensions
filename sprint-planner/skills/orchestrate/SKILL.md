@@ -3,7 +3,7 @@ name: orchestrate
 description: Execute complex workflows, raw task directives, checklists, or phased plan files with dependency-aware sequential or safe parallel subagents. Uses DeepSeek Pro V4 at max for implementation and GPT-5.6 Sol at medium to validate every phase. Use when the user asks to orchestrate, execute, or implement a multi-phase or long-running workflow.
 compatibility: Requires Pi with subagent_spawn, subagent_poll, subagent_status, and subagent_cancel; configured deepseek/deepseek-v4-pro max and openai-codex/gpt-5.6-sol medium model tuples; sprint_validate_plan and sprint_execution_record tools.
 metadata:
-  version: "3.0.0"
+  version: "3.1.0"
 ---
 
 # Orchestrate
@@ -98,7 +98,7 @@ Treat the complete user input as prompt text, not as a filename. Inspect any ref
 
 ### Generated plan directory input
 
-When the user supplies a generated plan directory, call `sprint_validate_plan` with the absolute directory path. This tool returns a versioned structured result with `valid`, `metadata`, and categorized `findings`.
+When the user supplies a generated plan directory, resolve it to a canonical project-relative directory path and call `sprint_validate_plan` with that path. Do not pass an absolute path. This tool returns a versioned structured result with `valid`, `metadata`, and categorized `findings`.
 
 - If `valid` is `false`, stop before any provider work. Record the `findings` in the root report and do not create an execution record or launch agents.
 - If the result version is unsupported, stop immediately — treat it as a permanent plan defect.
@@ -118,8 +118,17 @@ For a single phase file, follow its dependencies and shared concepts when presen
 
 ## Start the execution record
 
-After resolving authoritative input and validating a generated plan, call `sprint_execution_record` with `action: "start"` to persist the execution identity and freeze the source plan.
+After resolving authoritative input and validating a generated plan, call `sprint_execution_record` with `action: "start"` to persist the execution identity and freeze the source plan. `sourcePlanPath` must be the same canonical project-relative directory accepted by `sprint_validate_plan`:
 
+```json
+{
+  "action": "start",
+  "sourcePlanPath": ".internal-dev/plans/<plan-id>",
+  "sourcePlanningRunId": "<plan-id>"
+}
+```
+
+- `sourcePlanningRunId` is optional provenance, not a path. For `.internal-dev/plans/<plan-id>`, use exactly `<plan-id>`; for `.internal-dev/sprints/<planning-run-id>/planning`, use exactly `<planning-run-id>`; omit it for any other source layout. Never put `/`, a trailing slash, an absolute path, or a directory prefix in this field.
 - Use an execution identifier distinct from every source plan or planning-run identifier. Never alias a source identity.
 - Record the returned immutable source reference, source hashes, and initial revision.
 - Keep the source plan and planning-run bytes unchanged. Never write runtime material into their directories; all revisioned execution state belongs to the distinct execution record.
@@ -260,17 +269,20 @@ There is no `VERDICT: REPAIR` and no separate DeepSeek repair handoff. The GPT v
 
 ### BLOCKED handling
 
-`BLOCKED` means a concrete condition outside validator edit authority prevents PASS. On BLOCKED:
+`BLOCKED` means a concrete condition outside validator edit authority prevents PASS. It is durable validation-attempt evidence, not an automatic terminal latch. On BLOCKED:
 
 1. Durably checkpoint the BLOCKED verdict and its evidence through `sprint_execution_record` with `action: "checkpoint"`.
-2. Start no dependents of the blocked phase.
-3. Cancel only active sibling work that is unsafe to continue.
+2. Start no dependents of the blocked phase while its latest validation verdict is BLOCKED.
+3. Continue disjoint active siblings; cancel only sibling work that newly discovered write overlap makes unsafe.
 4. Poll every launched or cancelled agent to terminal.
-5. Record the terminal outcome truthfully — never mark completed without durable integration PASS.
+5. If the blocker becomes resolvable within accepted authority, launch a fresh GPT-5.6 Sol validator, checkpoint its next numbered attempt, and repeat until the latest verdict is PASS or the blocker remains unresolved. Never erase or replace earlier BLOCKED attempts.
+6. If the blocker remains unresolved, finish the record truthfully as blocked; never mark completed without durable latest phase and integration PASS evidence.
 
 ## Checkpoint changed files and verdicts
 
-After each validator terminates, observe the actual changed paths from repository state — not only child self-reports. Combine canonical present/deleted path observations and available digest/byte metadata with the validator's authorized repair boundary.
+After each validator terminates, observe the actual changed paths from repository state — not only child self-reports. Combine canonical present/deleted path observations and available digest/byte metadata with the validator's authorized repair boundary. Always submit every truthful changed path, including paths outside declared plan targets; never omit evidence to satisfy an incomplete plan.
+
+An accepted checkpoint may return a structured `outside-declared-targets` warning. Treat it as plan drift, not checkpoint failure: retain the immutable frozen targets as the original scheduling contract, widen only the root's observed write set, and reassess overlap before starting validators or later phases. Serialize validators when newly discovered changed or repair write sets overlap. If drift makes a future authoritative implementation wave unsafe, block that wave as a plan defect rather than silently changing its topology; non-authoritative work falls back to sequential execution.
 
 Before marking any PASS or opening a dependent barrier, checkpoint through `sprint_execution_record` with `action: "checkpoint"`:
 
@@ -282,7 +294,7 @@ Pass the latest returned revision to every checkpoint call. If revision rejectio
 
 ## PASS-before-dependent barriers
 
-No dependent phase starts before every dependency has a checkpointed `VERDICT: PASS` with its observed changed-file evidence. If a phase is `BLOCKED`, pause dependent scheduling but do not cancel active siblings whose targets are disjoint. If a phase remains `BLOCKED`, start no later dependency wave, and report the concrete user action or external decision required.
+No dependent phase starts before every dependency's latest checkpointed verdict is `VERDICT: PASS` with its observed changed-file evidence. If a phase is `BLOCKED`, pause dependent scheduling but do not cancel active siblings whose declared plus newly observed targets are disjoint. A later validation attempt for that same phase may replace BLOCKED as the derived latest status only by checkpointing PASS; all earlier attempts remain durable. If a phase remains `BLOCKED`, start no later dependency wave, and report the concrete user action or external decision required.
 
 ### Malformed verdict retry
 
@@ -315,9 +327,9 @@ After the integration validator terminates, observe repository changes again, in
 
 ## Finish the execution record
 
-After integration PASS is checkpointed, call `sprint_execution_record` with `action: "finish"` and `terminalState: "completed"`. Pass the latest revision. Never mark completed without durable integration PASS.
+After integration PASS is checkpointed, call `sprint_execution_record` with `action: "finish"` and `type: "completed"`. Pass the latest revision. Never mark completed without durable integration PASS.
 
-For non-success outcomes (BLOCKED, interrupted, or cancelled), cancel active children when required and poll every launched or cancelled child to a terminal state. Then checkpoint available evidence and all terminal child outcomes before finishing with the truthful non-success terminal state. Always pass the latest revision. Stale-revision rejection is a blocker.
+For non-success outcomes (unresolved BLOCKED, interrupted, or cancelled), cancel active children when required and poll every launched or cancelled child to a terminal state. Then checkpoint available evidence and all terminal child outcomes before finishing with the truthful non-success terminal state. `finish: blocked` is valid while the latest verdict for a phase or integration remains BLOCKED. Always pass the latest revision. Stale-revision rejection is a blocker.
 
 ## Completion
 

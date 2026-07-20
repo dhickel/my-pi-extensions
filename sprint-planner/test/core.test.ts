@@ -10,7 +10,7 @@ import {
 	BRAINSTORM_HEADINGS,
 	BRAINSTORM_LIFECYCLE_REQUIREMENT,
 	BRAINSTORM_TOOL_GUIDELINES,
-	checkpointExecutionRecord,
+	checkpointExecutionRecord as checkpointExecutionRecordDetailed,
 	classifyRun,
 	CONCEPT_HEADINGS,
 	createSprintRun,
@@ -45,6 +45,7 @@ import {
 	SprintPlannerEngine,
 	SprintStateStore,
 	sprintsRoot,
+	sourceIdentity,
 	startExecutionRecord,
 	validateBrainstormFindings,
 	validateDraftPlanShape,
@@ -153,6 +154,10 @@ async function project() {
 	const internal = path.join(root, ".internal-dev");
 	for (const store of ["sprints", "brainstorm", "handoffs", "plans", "reviews"]) await mkdir(path.join(internal, store), { recursive: true });
 	return { root, internal };
+}
+
+async function checkpointExecutionRecord(...args: Parameters<typeof checkpointExecutionRecordDetailed>): Promise<number> {
+	return (await checkpointExecutionRecordDetailed(...args)).revision;
 }
 
 class FakeRunner implements WorkflowRunner {
@@ -548,7 +553,7 @@ function assertOrchestrateSkillContract(content: string): void {
 	assert.equal(parsed.frontmatter.get("name"), "orchestrate", "frontmatter name");
 	assert.match(parsed.frontmatter.get("description") ?? "", /execute.*workflow.*phased plan.*DeepSeek.*GPT-5\.6 Sol/is, "frontmatter description");
 	assert.match(parsed.frontmatter.get("compatibility") ?? "", /subagent_spawn.*subagent_poll.*subagent_status.*subagent_cancel.*deepseek-v4-pro max.*gpt-5\.6-sol medium/i, "frontmatter compatibility");
-	assert.match(parsed.frontmatterText, /^metadata:\s*\n  version: "3\.0\.0"$/m, "frontmatter metadata version");
+	assert.match(parsed.frontmatterText, /^metadata:\s*\n  version: "3\.1\.0"$/m, "frontmatter metadata version");
 
 	for (const heading of REQUIRED_ORCHESTRATE_SECTIONS) {
 		const count = parsed.sections.filter((section) => section.heading === heading).length;
@@ -592,7 +597,8 @@ function assertOrchestrateSkillContract(content: string): void {
 	must("Preflight", /"tools"\s*:\s*\[\s*\]/i, "preflight tools empty array");
 
 	must("Interpret the directive", /complete user input as prompt text, not as a filename/i, "directive is prompt text");
-	must("Interpret the directive", /call `sprint_validate_plan`/i, "use sprint_validate_plan");
+	must("Interpret the directive", /canonical project-relative directory path.*call `sprint_validate_plan`/is, "use sprint_validate_plan with its canonical path contract");
+	must("Interpret the directive", /Do not pass an absolute path/i, "plan tools reject absolute source paths");
 	must("Interpret the directive", /If `valid` is `false`, stop before any provider work/i, "stop on invalid");
 	must("Interpret the directive", /Do not re-validate the plan directory structure with root tools/i, "no manual re-validation");
 	must("Interpret the directive", /deterministic `sprint_validate_plan` tool owns all plan-shape.*cross-consistency.*dependency.*target-overlap.*model-contract.*wave-completeness checks/is, "sprint_validate_plan owns validation");
@@ -600,6 +606,9 @@ function assertOrchestrateSkillContract(content: string): void {
 	must("Interpret the directive", /Preserve the user's scope, decisions, phase boundaries, exclusions, and completion criteria/i, "accepted scope preserved");
 
 	must("Start the execution record", /call `sprint_execution_record` with `action: "start"`/i, "execution record start");
+	must("Start the execution record", /`sourcePlanPath` must be the same canonical project-relative directory accepted by `sprint_validate_plan`/i, "execution source path contract");
+	must("Start the execution record", /`sourcePlanningRunId` is optional provenance, not a path/is, "planning provenance id contract");
+	must("Start the execution record", /\.internal-dev\/plans\/<plan-id>.*exactly `<plan-id>`.*\.internal-dev\/sprints\/<planning-run-id>\/planning.*exactly `<planning-run-id>`/is, "canonical planning id layouts");
 	must("Start the execution record", /execution identifier distinct from every source plan or planning-run identifier/i, "distinct execution id");
 	must("Start the execution record", /Record the returned immutable source reference, source hashes, and initial revision/i, "record source metadata");
 	must("Start the execution record", /source plan and planning-run bytes unchanged/i, "source bytes remain immutable");
@@ -650,8 +659,9 @@ function assertOrchestrateSkillContract(content: string): void {
 	must("Validate every phase with review-and-repair", /"tools"\s*:\s*\[\s*"read",\s*"grep",\s*"find",\s*"ls",\s*"bash",\s*"edit",\s*"write"\s*\]/i, "validator spawn tools");
 
 	// PASS-before-dependent barriers
-	must("PASS-before-dependent barriers", /No dependent phase starts before every dependency has a checkpointed `VERDICT: PASS` with its observed changed-file evidence/i, "checkpointed PASS barrier");
-	must("PASS-before-dependent barriers", /phase is `BLOCKED`.*pause dependent scheduling.*do not cancel active siblings whose targets are disjoint/is, "BLOCKED pause semantics");
+	must("PASS-before-dependent barriers", /No dependent phase starts before every dependency's latest checkpointed verdict is `VERDICT: PASS` with its observed changed-file evidence/i, "checkpointed latest-PASS barrier");
+	must("PASS-before-dependent barriers", /phase is `BLOCKED`.*pause dependent scheduling.*do not cancel active siblings whose declared plus newly observed targets are disjoint/is, "BLOCKED pause semantics");
+	must("PASS-before-dependent barriers", /later validation attempt.*replace BLOCKED as the derived latest status only by checkpointing PASS.*earlier attempts remain durable/is, "BLOCKED retry history");
 	must("PASS-before-dependent barriers", /phase remains `BLOCKED`, start no later dependency wave/i, "BLOCKED prevents downstream");
 
 	// Malformed verdict retry
@@ -660,6 +670,9 @@ function assertOrchestrateSkillContract(content: string): void {
 
 	// Checkpoint changed files and verdicts
 	must("Checkpoint changed files and verdicts", /After each validator terminates, observe the actual changed paths from repository state/i, "observe actual changed paths");
+	must("Checkpoint changed files and verdicts", /Always submit every truthful changed path, including paths outside declared plan targets/i, "truthful out-of-target evidence");
+	must("Checkpoint changed files and verdicts", /structured `outside-declared-targets` warning.*plan drift.*reassess overlap before starting validators or later phases/is, "plan-drift warning handling");
+	must("Checkpoint changed files and verdicts", /Serialize validators when newly discovered changed or repair write sets overlap/i, "serialize overlapping discovered validator writes");
 	must("Checkpoint changed files and verdicts", /Before marking any PASS or opening a dependent barrier, checkpoint through `sprint_execution_record`/i, "checkpoint before PASS barrier");
 	must("Checkpoint changed files and verdicts", /Pass the latest returned revision to every checkpoint call/i, "revision on every checkpoint");
 
@@ -669,9 +682,10 @@ function assertOrchestrateSkillContract(content: string): void {
 	must("Final integration gate", /After integration PASS, checkpoint the integration verdict, observed changed-file set, and evidence through `sprint_execution_record`/i, "checkpoint integration");
 	must("Final integration gate", /"tools"\s*:\s*\[\s*"read",\s*"grep",\s*"find",\s*"ls",\s*"bash",\s*"edit",\s*"write"\s*\]/i, "integration validator tools");
 
-	must("Finish the execution record", /After integration PASS is checkpointed, call `sprint_execution_record` with `action: "finish"` and `terminalState: "completed"`/i, "finish after integration PASS");
+	must("Finish the execution record", /After integration PASS is checkpointed, call `sprint_execution_record` with `action: "finish"` and `type: "completed"`/i, "finish after integration PASS");
 	must("Finish the execution record", /Never mark completed without durable integration PASS/i, "no completed without PASS");
 	must("Finish the execution record", /non-success outcomes.*poll every launched or cancelled child to a terminal state.*checkpoint available evidence and all terminal child outcomes before finishing.*truthful non-success terminal state/is, "truthful non-success finish after terminal accounting");
+	must("Finish the execution record", /`finish: blocked` is valid while the latest verdict for a phase or integration remains BLOCKED/i, "unresolved latest BLOCKED can finish blocked");
 
 	must("Completion", /Confirm every phase and final integration have independent checkpointed.*VERDICT: PASS/i, "all checkpointed gates passed");
 	must("Completion", /Review the final diff or changed-file set for scope and accidental edits/i, "final scope inspection");
@@ -745,6 +759,10 @@ test("package installs the orchestrate skill and exposes the complete agent-call
 	}
 	assert.doesNotMatch(extension, /sprint_(?:ironout|advanceplan)[\s\S]{0,1000}(?:provider|model): Type\./);
 	assert.match(extension, /name: "sprint_validate_plan"[\s\S]*additionalProperties: false[\s\S]*details,\n\s*};/);
+	const executionTool = extension.slice(extension.indexOf('name: "sprint_execution_record"'), extension.indexOf('pi.registerCommand("sprint"'));
+	assert.match(executionTool, /parameters: Type\.Union\([\s\S]*?\], \{ type: "object" \}\),/, "the strict union must advertise type: object at the provider schema root");
+	assert.match(extension, /EXECUTION_PHASE_PATTERN = "\^phase-\[0-9\]\{2\}-\[a-z0-9\]\[a-z0-9-\]\*\(\?:\\\\\.md\)\?\$"/);
+	assert.equal((executionTool.match(/phase: Type\.String\(\{[^}]*pattern: EXECUTION_PHASE_PATTERN, description: EXECUTION_PHASE_DESCRIPTION[^}]*\}\)/g) ?? []).length, 2, "both phase checkpoint variants expose normalization pattern and description");
 	const runner = await readFile(path.join(packageRoot, "pi-runner.ts"), "utf8");
 	assert.match(runner, /const builtins = isolated \? \[\] : \["read", "grep", "find", "ls"\]/);
 	assert.doesNotMatch(runner, /sprint_report_toolchain_blocker|"bash", "edit", "write"/);
@@ -3043,15 +3061,49 @@ async function makePlanDir(planDir: string): Promise<void> {
 	for (const f of planFiles) await writeFile(path.join(planDir, f.path), f.content);
 }
 
+async function makeBranchingPlanDir(planDir: string): Promise<void> {
+	const orchestration = [
+		"# Orchestration", "", "## Scope Size", "", "**Size**: medium", "", "## Phase Ledger", "",
+		"- phase-01-first.md | depends: none | targets: sprint-planner/target-01.ts | goal: Complete phase 1",
+		"- phase-02-second.md | depends: phase-01-first.md | targets: sprint-planner/target-02.ts | goal: Complete phase 2",
+		"- phase-03-third.md | depends: phase-01-first.md | targets: sprint-planner/target-03.ts | goal: Complete phase 3",
+		"", "## Execution Waves", "",
+		"- wave-01: phase-01-first.md",
+		"- wave-02: phase-03-third.md",
+		"- wave-03: phase-02-second.md",
+		"", "## Model Assignments", "",
+		"- Implementation: deepseek/deepseek-v4-pro:max",
+		"- Validation: openai-codex/gpt-5.6-sol:medium",
+		"- Implementers: exactly one implementation agent per phase",
+		"", "## Validation Gate", "",
+		"- Gate: post-phase validator review-and-repair must PASS before a phase is complete.",
+		"- Dependencies: no dependent phase starts before every dependency has PASS.",
+		"", "## Final Integration", "",
+		"- Integration: after all phases PASS, run final integration validation with openai-codex/gpt-5.6-sol:medium.", "",
+	].join("\n");
+	const planFiles = [
+		{ path: "concepts.md", content: concepts },
+		{ path: "orchestration.md", content: orchestration },
+		{ path: "phase-01-first.md", content: phaseMd(1, "none", "Complete phase 1", "sprint-planner/target-01.ts") },
+		{ path: "phase-02-second.md", content: phaseMd(2, "phase-01-first.md", "Complete phase 2", "sprint-planner/target-02.ts") },
+		{ path: "phase-03-third.md", content: phaseMd(3, "phase-01-first.md", "Complete phase 3", "sprint-planner/target-03.ts") },
+	];
+	await mkdir(planDir, { recursive: true });
+	for (const file of planFiles) await writeFile(path.join(planDir, file.path), file.content);
+}
+
 test("start creates an execution record with frozen source snapshot and revision 0", async () => {
 	const { root, internal } = await project();
 	const planDir = path.join(root, "plans", "demo-plan");
 	await makePlanDir(planDir);
 
-	const { handle, revision } = await startExecutionRecord(internal, root, "plans/demo-plan");
+	const { handle, revision, source } = await startExecutionRecord(internal, root, "plans/demo-plan");
 	assert.equal(revision, 0);
 	assert.match(handle.runId, /^exec-/);
 	assert.equal(handle.leaseHandle.record.runKind, "execution");
+	assert.equal(source.sourcePlanPath, "plans/demo-plan");
+	assert.equal(source.files.length, 4);
+	assert.match(source.aggregateDigest, /^[0-9a-f]{64}$/);
 
 	// Verify record on disk
 	const record = await loadExecutionRecord(handle.runDirectory, handle.runId);
@@ -3072,6 +3124,25 @@ test("start creates an execution record with frozen source snapshot and revision
 	await interruptActiveRecord(handle, "Test cleanup.");
 });
 
+test("start freezes valid waves whose traversal order differs from phase-ledger order", async () => {
+	const { root, internal } = await project();
+	const planDir = path.join(root, "plans", "branching-plan");
+	await makeBranchingPlanDir(planDir);
+	assert.equal((await inspectPlanDirectory(planDir, root)).valid, true);
+
+	const { handle } = await startExecutionRecord(internal, root, "plans/branching-plan");
+	const record = await loadExecutionRecord(handle.runDirectory, handle.runId);
+	assert.ok(record);
+	assert.deepEqual(Object.keys(record!.frozen.waves), record!.frozen.phases);
+	assert.deepEqual(record!.frozen.waves, {
+		"phase-01-first.md": 1,
+		"phase-02-second.md": 3,
+		"phase-03-third.md": 2,
+	});
+
+	await interruptActiveRecord(handle, "Test cleanup.");
+});
+
 test("start rejects an invalid source plan", async () => {
 	const { root, internal } = await project();
 	const planDir = path.join(root, "plans", "bad-plan");
@@ -3084,21 +3155,54 @@ test("start rejects an invalid source plan", async () => {
 	);
 });
 
-test("start with sourcePlanningRunId from planning run", async () => {
+test("source identity helper classifies both canonical layouts and other paths", () => {
+	assert.deepEqual(sourceIdentity(".internal-dev/plans/standalone"), { layout: "standalone-plan", planningRunId: "standalone" });
+	assert.deepEqual(sourceIdentity(".internal-dev/sprints/persisted/planning"), { layout: "sprint-planning", planningRunId: "persisted" });
+	assert.deepEqual(sourceIdentity("plans/custom"), { layout: "other" });
+});
+
+test("standalone and sprint-planning provenance accept matching and omitted ids with parity", async () => {
 	const { root, internal } = await project();
-	// Create a mock planning run directory with a plan inside
-	const runDir = await createSprintRun(internal, "planning-source");
-	const planDir = path.join(runDir, "planning");
-	await makePlanDir(planDir);
-	// Place .state.json to mark it as a planning run
-	await writeFile(path.join(runDir, ".state.json"), JSON.stringify({ version: 3, runId: "planning-source", status: "completed" }));
+	const layouts = [
+		{ id: "standalone-source", sourcePath: ".internal-dev/plans/standalone-source", planDir: path.join(internal, "plans", "standalone-source") },
+		{ id: "sprint-source", sourcePath: ".internal-dev/sprints/sprint-source/planning", planDir: path.join(internal, "sprints", "sprint-source", "planning") },
+	];
+	for (const layout of layouts) {
+		await makePlanDir(layout.planDir);
+		for (const supplied of [layout.id, undefined]) {
+			const { handle, revision } = await startExecutionRecord(internal, root, layout.sourcePath, supplied);
+			assert.equal(revision, 0);
+			const record = await loadExecutionRecord(handle.runDirectory, handle.runId);
+			assert.equal(record!.source.sourcePlanningRunId, layout.id);
+			await interruptActiveRecord(handle, "Test cleanup.");
+		}
+	}
+});
 
-	const { handle, revision } = await startExecutionRecord(internal, root, ".internal-dev/sprints/planning-source/planning");
-	assert.equal(revision, 0);
-	const record = await loadExecutionRecord(handle.runDirectory, handle.runId);
-	assert.equal(record!.source.sourcePlanningRunId, "planning-source");
+test("standalone and sprint-planning provenance reject mismatching ids with parity", async () => {
+	const { root, internal } = await project();
+	const layouts = [
+		{ sourcePath: ".internal-dev/plans/standalone-source", planDir: path.join(internal, "plans", "standalone-source") },
+		{ sourcePath: ".internal-dev/sprints/sprint-source/planning", planDir: path.join(internal, "sprints", "sprint-source", "planning") },
+	];
+	for (const layout of layouts) {
+		await makePlanDir(layout.planDir);
+		await assert.rejects(startExecutionRecord(internal, root, layout.sourcePath, "wrong-source"), /sourcePlanningRunId must be the exact <id>/);
+	}
+});
 
-	await interruptActiveRecord(handle, "Test cleanup.");
+test("provenance rejects trailing slashes and paths supplied instead of ids", async () => {
+	const { root, internal } = await project();
+	const layouts = [
+		{ id: "standalone-source", sourcePath: ".internal-dev/plans/standalone-source", planDir: path.join(internal, "plans", "standalone-source"), pathAsId: ".internal-dev/plans/standalone-source" },
+		{ id: "sprint-source", sourcePath: ".internal-dev/sprints/sprint-source/planning", planDir: path.join(internal, "sprints", "sprint-source", "planning"), pathAsId: ".internal-dev/sprints/sprint-source/planning" },
+	];
+	for (const layout of layouts) {
+		await makePlanDir(layout.planDir);
+		await assert.rejects(startExecutionRecord(internal, root, `${layout.sourcePath}/`, layout.id), /canonical|unsafe traversal/i);
+		await assert.rejects(startExecutionRecord(internal, root, layout.sourcePath, `${layout.id}/`), /sourcePlanningRunId must be the exact <id>/);
+		await assert.rejects(startExecutionRecord(internal, root, layout.sourcePath, layout.pathAsId), /sourcePlanningRunId must be the exact <id>/);
+	}
 });
 
 test("execution id allocation avoids collisions and honors name prefix", async () => {
@@ -3215,6 +3319,90 @@ test("phase validation BLOCKED permits finish blocked", async () => {
 	const record = await loadExecutionRecord(handle.runDirectory, handle.runId);
 	assert.equal(record!.state, "blocked");
 	assert.ok(record!.blocker);
+});
+
+test("phase BLOCKED can be retried to PASS without erasing attempt history", async () => {
+	const { root, internal } = await project();
+	await makePlanDir(path.join(root, "plans", "blocked-retry-pass"));
+	const { handle } = await startExecutionRecord(internal, root, "plans/blocked-retry-pass");
+	let revision = await checkpointExecutionRecord(handle, 0, "implementation", "phase-01-first.md", undefined, "Implemented.", undefined);
+	revision = await checkpointExecutionRecord(handle, revision, "phase_validation", "phase-01-first.md", "BLOCKED", "Credential missing.", undefined);
+	let record = (await loadExecutionRecord(handle.runDirectory, handle.runId))!;
+	assert.equal(record.state, "active");
+	assert.equal(record.blocker, undefined);
+	revision = await checkpointExecutionRecord(handle, revision, "phase_validation", "phase-01-first", "PASS", "Credential restored; PASS.", undefined);
+	record = (await loadExecutionRecord(handle.runDirectory, handle.runId))!;
+	assert.deepEqual(record.phases[0].validations.map(({ attempt, verdict }) => ({ attempt, verdict })), [
+		{ attempt: 1, verdict: "BLOCKED" },
+		{ attempt: 2, verdict: "PASS" },
+	]);
+	await interruptActiveRecord(handle, "Test cleanup.");
+});
+
+test("phase BLOCKED can be retried repeatedly until the latest attempt PASSes", async () => {
+	const { root, internal } = await project();
+	await makePlanDir(path.join(root, "plans", "blocked-retry-chain"));
+	const { handle } = await startExecutionRecord(internal, root, "plans/blocked-retry-chain");
+	let revision = await checkpointExecutionRecord(handle, 0, "implementation", "phase-01-first", undefined, "Implemented.", undefined);
+	for (const [verdict, report] of [["BLOCKED", "First blocker."], ["BLOCKED", "Still blocked."], ["PASS", "Resolved."]] as const) {
+		revision = await checkpointExecutionRecord(handle, revision, "phase_validation", "phase-01-first", verdict, report, undefined);
+	}
+	const record = (await loadExecutionRecord(handle.runDirectory, handle.runId))!;
+	assert.deepEqual(record.phases[0].validations.map(({ attempt, verdict }) => ({ attempt, verdict })), [
+		{ attempt: 1, verdict: "BLOCKED" },
+		{ attempt: 2, verdict: "BLOCKED" },
+		{ attempt: 3, verdict: "PASS" },
+	]);
+	await interruptActiveRecord(handle, "Test cleanup.");
+});
+
+test("a BLOCKED phase does not reject disjoint sibling evidence", async () => {
+	const { root, internal } = await project();
+	await makeBranchingPlanDir(path.join(root, "plans", "blocked-sibling"));
+	const { handle } = await startExecutionRecord(internal, root, "plans/blocked-sibling");
+	let revision = await checkpointExecutionRecord(handle, 0, "implementation", "phase-01-first", undefined, "Root implemented.", undefined);
+	revision = await checkpointExecutionRecord(handle, revision, "phase_validation", "phase-01-first", "PASS", "Root PASS.", undefined);
+	revision = await checkpointExecutionRecord(handle, revision, "implementation", "phase-02-second", undefined, "Sibling 2 implemented.", undefined);
+	revision = await checkpointExecutionRecord(handle, revision, "phase_validation", "phase-02-second", "BLOCKED", "Sibling 2 blocked.", undefined);
+	revision = await checkpointExecutionRecord(handle, revision, "implementation", "phase-03-third", undefined, "Disjoint sibling 3 implemented.", undefined);
+	revision = await checkpointExecutionRecord(handle, revision, "phase_validation", "phase-03-third", "PASS", "Sibling 3 PASS.", undefined);
+	const record = (await loadExecutionRecord(handle.runDirectory, handle.runId))!;
+	assert.equal(record.state, "active");
+	assert.equal(record.phases[1].validations.at(-1)!.verdict, "BLOCKED");
+	assert.equal(record.phases[2].validations.at(-1)!.verdict, "PASS");
+	await interruptActiveRecord(handle, "Test cleanup.");
+});
+
+test("dependents remain rejected until a blocked dependency's latest verdict is PASS", async () => {
+	const { root, internal } = await project();
+	await makePlanDir(path.join(root, "plans", "blocked-dependency-retry"));
+	const { handle } = await startExecutionRecord(internal, root, "plans/blocked-dependency-retry");
+	let revision = await checkpointExecutionRecord(handle, 0, "implementation", "phase-01-first", undefined, "P1 implemented.", undefined);
+	revision = await checkpointExecutionRecord(handle, revision, "phase_validation", "phase-01-first", "BLOCKED", "P1 blocked.", undefined);
+	await assert.rejects(
+		checkpointExecutionRecord(handle, revision, "implementation", "phase-02-second", undefined, "Too early.", undefined),
+		/latest verdict/,
+	);
+	revision = await checkpointExecutionRecord(handle, revision, "phase_validation", "phase-01-first.md", "PASS", "P1 now PASS.", undefined);
+	revision = await checkpointExecutionRecord(handle, revision, "implementation", "phase-02-second", undefined, "P2 now allowed.", undefined);
+	assert.equal(revision, 4);
+	await interruptActiveRecord(handle, "Test cleanup.");
+});
+
+test("phase names with and without .md normalize to the same canonical ledger name", async () => {
+	const { root, internal } = await project();
+	await makePlanDir(path.join(root, "plans", "phase-name-normalization"));
+	const { handle } = await startExecutionRecord(internal, root, "plans/phase-name-normalization");
+	let revision = await checkpointExecutionRecord(handle, 0, "implementation", "phase-01-first", undefined, "Implemented without suffix.", undefined);
+	revision = await checkpointExecutionRecord(handle, revision, "phase_validation", "phase-01-first.md", "PASS", "Validated with suffix.", undefined);
+	const record = (await loadExecutionRecord(handle.runDirectory, handle.runId))!;
+	assert.equal(record.phases[0].phase, "phase-01-first.md");
+	assert.equal(record.phases[0].validations[0].attempt, 1);
+	await assert.rejects(
+		checkpointExecutionRecord(handle, revision, "implementation", "phase-99-missing", undefined, "Unknown.", undefined),
+		/Valid canonical phase names: phase-01-first\.md, phase-02-second\.md/,
+	);
+	await interruptActiveRecord(handle, "Test cleanup.");
 });
 
 test("stale revision rejection prevents checkpoint and finish", async () => {
@@ -3385,23 +3573,69 @@ test("changed file observation records present and deleted files", async () => {
 	await interruptActiveRecord(handle, "Test cleanup.");
 });
 
-test("changed file rejects source-plan and self-referencing paths", async () => {
+test("out-of-target changed paths are accepted, persisted, and returned as structured plan-drift warnings", async () => {
+	const { root, internal } = await project();
+	await makePlanDir(path.join(root, "plans", "outside-target"));
+	await mkdir(path.join(root, "sprint-planner"), { recursive: true });
+	await writeFile(path.join(root, "sprint-planner", "target-01.ts"), "declared\n");
+	await writeFile(path.join(root, "sprint-planner", "adjacent.ts"), "truthful drift\n");
+	const { handle } = await startExecutionRecord(internal, root, "plans/outside-target");
+
+	const checkpoint = await checkpointExecutionRecordDetailed(
+		handle, 0, "implementation", "phase-01-first", undefined, "Implemented with an adjacent required edit.",
+		["sprint-planner/target-01.ts", "sprint-planner/adjacent.ts"],
+	);
+	assert.equal(checkpoint.revision, 1);
+	assert.deepEqual(checkpoint.warnings, [{
+		code: "outside-declared-targets",
+		phase: "phase-01-first.md",
+		paths: ["sprint-planner/adjacent.ts"],
+		message: "Changed-file evidence includes 1 path(s) outside the immutable declared scheduling targets. Treat this as plan drift and reassess overlap.",
+	}]);
+	const record = (await loadExecutionRecord(handle.runDirectory, handle.runId))!;
+	assert.deepEqual(record.phases[0].implementation!.outsideDeclaredTargets, ["sprint-planner/adjacent.ts"]);
+	assert.deepEqual(record.frozen.targets["phase-01-first.md"], ["sprint-planner/target-01.ts"]);
+	await interruptActiveRecord(handle, "Test cleanup.");
+});
+
+test("changed file rejects unsafe, source-plan, and self-referencing paths", async () => {
 	const { root, internal } = await project();
 	const planDir = path.join(root, "plans", "self-ref");
 	await makePlanDir(planDir);
 
 	const { handle } = await startExecutionRecord(internal, root, "plans/self-ref");
 
-	// Source-plan path rejected
+	// Source-plan path rejected.
 	await assert.rejects(
 		checkpointExecutionRecord(handle, 0, "implementation", "phase-01-first.md", undefined, "test", ["plans/self-ref/concepts.md"]),
 		/Changed-file path must not be in the source plan/,
 	);
 
-	// Self execution record path rejected
+	// Self execution record path rejected.
 	await assert.rejects(
 		checkpointExecutionRecord(handle, 0, "implementation", "phase-01-first.md", undefined, "test", [`.internal-dev/sprints/${handle.runId}/manifest.md`]),
 		/Changed-file path must not be in the execution record/,
+	);
+	await assert.rejects(
+		checkpointExecutionRecord(handle, 0, "implementation", "phase-01-first.md", undefined, "test", [".internal-dev/sprints/exec-other/execution/record.json"]),
+		/Changed-file path must not be in the execution record/,
+	);
+
+	// Traversal, directories, and symlinks remain unsafe even outside declared targets.
+	await assert.rejects(
+		checkpointExecutionRecord(handle, 0, "implementation", "phase-01-first.md", undefined, "test", ["sprint-planner/../escape.ts"]),
+		/unsafe traversal/,
+	);
+	await mkdir(path.join(root, "outside-directory"));
+	await assert.rejects(
+		checkpointExecutionRecord(handle, 0, "implementation", "phase-01-first.md", undefined, "test", ["outside-directory"]),
+		/not a regular file/,
+	);
+	await writeFile(path.join(root, "outside-target.txt"), "target\n");
+	await symlink(path.join(root, "outside-target.txt"), path.join(root, "outside-link.txt"));
+	await assert.rejects(
+		checkpointExecutionRecord(handle, 0, "implementation", "phase-01-first.md", undefined, "test", ["outside-link.txt"]),
+		/not a regular file/,
 	);
 
 	await interruptActiveRecord(handle, "Test cleanup.");
@@ -3561,7 +3795,7 @@ test("execution record cannot be mutated after terminal state", async () => {
 	);
 });
 
-test("integration_validation BLOCKED blocks further phase checkpoints", async () => {
+test("integration BLOCKED remains durable and can be retried to latest PASS", async () => {
 	const { root, internal } = await project();
 	const planDir = path.join(root, "plans", "integration-block");
 	await makePlanDir(planDir);
@@ -3573,14 +3807,15 @@ test("integration_validation BLOCKED blocks further phase checkpoints", async ()
 	rev = await checkpointExecutionRecord(handle, rev, "phase_validation", "phase-01-first.md", "PASS", "P1 PASS.", undefined);
 	rev = await checkpointExecutionRecord(handle, rev, "implementation", "phase-02-second.md", undefined, "P2 done.", undefined);
 	rev = await checkpointExecutionRecord(handle, rev, "phase_validation", "phase-02-second.md", "PASS", "P2 PASS.", undefined);
-
-	// Integration BLOCKED
 	rev = await checkpointExecutionRecord(handle, rev, "integration_validation", undefined, "BLOCKED", "Integration cannot pass.", undefined);
-
-	// Can only finish blocked
-	rev = await finishExecutionRecord(handle, rev, "blocked", "Resolved externally.");
-	const record = await loadExecutionRecord(handle.runDirectory, handle.runId);
-	assert.equal(record!.state, "blocked");
+	rev = await checkpointExecutionRecord(handle, rev, "integration_validation", undefined, "PASS", "Integration repaired and PASS.", undefined);
+	rev = await finishExecutionRecord(handle, rev, "completed", "Completed after integration retry.");
+	const record = (await loadExecutionRecord(handle.runDirectory, handle.runId))!;
+	assert.deepEqual(record.integrationValidations.map(({ attempt, verdict }) => ({ attempt, verdict })), [
+		{ attempt: 1, verdict: "BLOCKED" },
+		{ attempt: 2, verdict: "PASS" },
+	]);
+	assert.equal(record.state, "completed");
 });
 
 test("checkpoint with changed file produces stable present observation", async () => {
@@ -3661,7 +3896,7 @@ test("source drift rejects checkpoints without changing descriptor or revision",
 	assert.ok(terminal.sourceDrift);
 });
 
-test("BLOCKED evidence permits no checkpoint and shutdown terminalizes it as blocked", async () => {
+test("BLOCKED evidence remains active while dependents wait, and shutdown records interruption", async () => {
 	const { root, internal } = await project();
 	await makePlanDir(path.join(root, "plans", "shutdown-blocked"));
 	const { handle } = await startExecutionRecord(internal, root, "plans/shutdown-blocked");
@@ -3669,12 +3904,45 @@ test("BLOCKED evidence permits no checkpoint and shutdown terminalizes it as blo
 	revision = await checkpointExecutionRecord(handle, revision, "phase_validation", "phase-01-first.md", "BLOCKED", "external credential unavailable", undefined);
 	await assert.rejects(
 		checkpointExecutionRecord(handle, revision, "implementation", "phase-02-second.md", undefined, "must reject", undefined),
-		/only finish: blocked/,
+		/latest verdict/,
 	);
+	assert.equal((await loadExecutionRecord(handle.runDirectory, handle.runId))!.state, "active");
 	assert.equal(await interruptActiveRecord(handle, "Session shutdown."), true);
 	const record = (await loadExecutionRecord(handle.runDirectory, handle.runId))!;
-	assert.equal(record.state, "blocked");
+	assert.equal(record.state, "interrupted");
 	assert.equal(await entryExists(leasePath(handle.runDirectory)), false);
+});
+
+test("version 1 execution records remain parseable but reject append operations", async () => {
+	const { root, internal } = await project();
+	await makePlanDir(path.join(root, "plans", "legacy-readable"));
+	const { handle } = await startExecutionRecord(internal, root, "plans/legacy-readable");
+	let revision = await checkpointExecutionRecord(handle, 0, "implementation", "phase-01-first", undefined, "Legacy implementation.", undefined);
+	revision = await checkpointExecutionRecord(handle, revision, "phase_validation", "phase-01-first", "PASS", "Legacy PASS.", undefined);
+	const recordFile = path.join(handle.runDirectory, "execution", "record.json");
+	const legacy = JSON.parse(await readFile(recordFile, "utf8"));
+	legacy.version = 1;
+	delete legacy.integrationValidations;
+	for (const phase of legacy.phases) {
+		if (phase.implementation) delete phase.implementation.outsideDeclaredTargets;
+		if (phase.validations[0]) {
+			phase.validator = phase.validations[0];
+			delete phase.validator.attempt;
+			delete phase.validator.outsideDeclaredTargets;
+		}
+		delete phase.validations;
+	}
+	await writeFile(recordFile, `${JSON.stringify(legacy, null, 2)}\n`);
+
+	const parsed = parseExecutionRecord(await readFile(recordFile, "utf8"), handle.runDirectory, handle.runId);
+	assert.equal(parsed.version, 1);
+	assert.deepEqual(parsed.phases.map((phase) => phase.validations.map(({ attempt, verdict }) => ({ attempt, verdict }))), [[{ attempt: 1, verdict: "PASS" }], []]);
+	assert.equal((await loadExecutionRecord(handle.runDirectory, handle.runId))!.version, 1);
+	await assert.rejects(
+		checkpointExecutionRecordDetailed(handle, revision, "implementation", "phase-02-second", undefined, "Must remain read-only.", undefined),
+		/version 1 is read-only/,
+	);
+	await releaseLease(handle.leaseHandle);
 });
 
 test("parser rejects tuple drift and evidence/revision mismatch", async () => {

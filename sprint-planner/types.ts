@@ -2,7 +2,8 @@ export const SPRINT_STATE_VERSION = 3;
 export const PLAN_VALIDATION_RESULT_VERSION = 1;
 export const LEASE_VERSION = 1;
 export const RUN_RECORD_SCHEMA_VERSION = 1;
-export const EXECUTION_RECORD_VERSION = 1;
+export const EXECUTION_RECORD_VERSION = 2;
+export const LEGACY_EXECUTION_RECORD_VERSION = 1;
 export const DEFAULT_BRAINSTORM_AGENTS = 4;
 export const MIN_BRAINSTORM_AGENTS = 2;
 export const MAX_BRAINSTORM_AGENTS = 8;
@@ -284,6 +285,12 @@ export interface RunRecordSummary {
 // ── Execution records ────────────────────────────────────────────────────
 
 export type ExecutionRecordState = "active" | "completed" | "blocked" | "interrupted";
+export type SourceLayout = "standalone-plan" | "sprint-planning" | "other";
+
+export interface SourceIdentity {
+	layout: SourceLayout;
+	planningRunId?: string;
+}
 
 export interface SourceDescriptor {
 	projectRoot: string;
@@ -317,45 +324,82 @@ export interface ExecutionEvidence {
 	/** Compatibility index; observations below are authoritative. */
 	changedFiles: string[];
 	changedFileObservations: ChangedFileObservation[];
+	/** Truthful changed paths outside the immutable scheduling target contract. */
+	outsideDeclaredTargets: string[];
 	timestamp: string;
+}
+
+export interface ValidationEvidence extends ExecutionEvidence {
+	attempt: number;
+	verdict: "PASS" | "BLOCKED";
 }
 
 export interface PhaseEvidence {
 	phase: string;
 	implementation?: ExecutionEvidence;
-	validator?: ExecutionEvidence & { verdict: "PASS" | "BLOCKED" };
+	validations: ValidationEvidence[];
 }
+
+export type PhaseExecutionStatus = "pending" | "implemented" | "blocked" | "passed";
 
 export interface SourceDriftEvidence {
 	observedAt: string;
 	reason: string;
 }
 
-export interface ExecutionRecord {
-	version: typeof EXECUTION_RECORD_VERSION;
+export interface TerminalExecutionEvidence {
+	reason: string;
+	timestamp: string;
+	changedFileObservations: ChangedFileObservation[];
+	outsideDeclaredTargets: string[];
+}
+
+export interface CompletionEvidence {
+	report: string;
+	timestamp: string;
+	changedFileObservations: ChangedFileObservation[];
+	outsideDeclaredTargets: string[];
+}
+
+interface ExecutionRecordFields {
 	runId: string;
 	state: ExecutionRecordState;
 	revision: number;
 	source: SourceDescriptor;
 	frozen: FrozenOrchestrationSnapshot;
 	phases: PhaseEvidence[];
-	integration?: ExecutionEvidence & { verdict: "PASS" | "BLOCKED" };
-	blocker?: {
-		reason: string;
-		timestamp: string;
-		changedFileObservations: ChangedFileObservation[];
-	};
-	interrupted?: {
-		reason: string;
-		timestamp: string;
-		changedFileObservations: ChangedFileObservation[];
-	};
-	completion?: { report: string; timestamp: string; changedFileObservations: ChangedFileObservation[] };
+	integrationValidations: ValidationEvidence[];
+	blocker?: TerminalExecutionEvidence;
+	interrupted?: TerminalExecutionEvidence;
+	completion?: CompletionEvidence;
 	sourceDrift?: SourceDriftEvidence;
 	terminalAt?: string;
 	createdAt: string;
 	updatedAt: string;
 	completedAt?: string;
+}
+
+export interface ExecutionRecord extends ExecutionRecordFields {
+	version: typeof EXECUTION_RECORD_VERSION;
+}
+
+/** Validated, normalized read model for a legacy v1 wire record. Mutations reject it. */
+export interface ReadOnlyExecutionRecordV1 extends ExecutionRecordFields {
+	version: typeof LEGACY_EXECUTION_RECORD_VERSION;
+}
+
+export type ReadableExecutionRecord = ExecutionRecord | ReadOnlyExecutionRecordV1;
+
+export interface CheckpointWarning {
+	code: "outside-declared-targets";
+	phase?: string;
+	paths: string[];
+	message: string;
+}
+
+export interface CheckpointResult {
+	revision: number;
+	warnings: CheckpointWarning[];
 }
 
 export interface ExecutionRecordManifest {
@@ -365,7 +409,7 @@ export interface ExecutionRecordManifest {
 	sourceDescriptor: SourceDescriptor;
 	frozenOrchestration: FrozenOrchestrationSnapshot;
 	phases: PhaseEvidence[];
-	integration?: ExecutionRecord["integration"];
+	integrationValidations: ValidationEvidence[];
 	blocker?: ExecutionRecord["blocker"];
 	interrupted?: ExecutionRecord["interrupted"];
 	createdAt: string;

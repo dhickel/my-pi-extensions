@@ -37,6 +37,8 @@ import { PiWorkflowRunner } from "./pi-runner.ts";
 
 const BINDING_ENTRY = "sprint-planner-binding-v1";
 const FOOTER_KEY = "sprint-planner";
+const EXECUTION_PHASE_PATTERN = "^phase-[0-9]{2}-[a-z0-9][a-z0-9-]*(?:\\.md)?$";
+const EXECUTION_PHASE_DESCRIPTION = "Phase filename with optional .md suffix, for example phase-02-workspace-types or phase-02-workspace-types.md. The canonical .md form is stored.";
 
 type Binding =
 	| { kind: "current"; runId: string; internalDevPath: string; timestamp: string }
@@ -575,8 +577,10 @@ export default function sprintPlannerExtension(pi: ExtensionAPI) {
 		description: "Persist versioned execution-only orchestration evidence for a sprint plan. Accepts start, checkpoint, and finish actions. Never coordinates workers; pure persistence.",
 		promptSnippet: "Start, checkpoint, or finish a durable execution record for a sprint plan",
 		promptGuidelines: [
-			"Use sprint_execution_record start to create an immutable snapshot of a source plan and begin tracking orchestration evidence.",
-			"Use sprint_execution_record checkpoint to record implementation, phase validation, or integration validation evidence.",
+			"Use sprint_execution_record start with a canonical project-relative sourcePlanPath; sourcePlanningRunId is optional and must be the exact id from .internal-dev/plans/<id> or .internal-dev/sprints/<id>/planning, never a path.",
+			"Use sprint_execution_record checkpoint to record implementation, phase validation, or integration validation evidence. Phase names may omit .md; canonical filenames are stored.",
+			"Checkpoint warnings for paths outside declared targets are accepted plan-drift evidence, not rejection; preserve them and reassess write overlap.",
+			"A BLOCKED validation checkpoint remains retryable and does not terminalize the record; dependents require each dependency's latest PASS.",
 			"Use sprint_execution_record finish to transition the record to a terminal completed, blocked, or interrupted state.",
 			"Each checkpoint requires the caller's expectedRevision; revision increments once per accepted transition.",
 			"This tool persists evidence only. Worker coordination is owned by the orchestrate skill.",
@@ -584,21 +588,21 @@ export default function sprintPlannerExtension(pi: ExtensionAPI) {
 		parameters: Type.Union([
 			Type.Object({
 				action: Type.Literal("start"),
-				sourcePlanPath: Type.String({ minLength: 1, maxLength: 1024 }),
-				sourcePlanningRunId: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+				sourcePlanPath: Type.String({ minLength: 1, maxLength: 1024, description: "Canonical project-relative path to the validated plan directory." }),
+				sourcePlanningRunId: Type.Optional(Type.String({ minLength: 1, maxLength: 128, description: "Optional exact provenance id: <id> for .internal-dev/plans/<id> or .internal-dev/sprints/<id>/planning. Never a path." })),
 				name: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
 				runId: Type.Optional(Type.String({ pattern: "^exec-[A-Za-z0-9][A-Za-z0-9_-]*$", maxLength: 128 })),
 			}, { additionalProperties: false }),
 			Type.Object({
 				action: Type.Literal("checkpoint"), type: Type.Literal("implementation"),
 				runId: Type.String({ minLength: 1, maxLength: 128 }), expectedRevision: Type.Integer({ minimum: 0 }),
-				phase: Type.String({ minLength: 1, maxLength: 256 }), report: Type.String({ minLength: 1, maxLength: 100_000 }),
+				phase: Type.String({ minLength: 1, maxLength: 256, pattern: EXECUTION_PHASE_PATTERN, description: EXECUTION_PHASE_DESCRIPTION }), report: Type.String({ minLength: 1, maxLength: 100_000 }),
 				changedPaths: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 1024 }), { maxItems: 500, uniqueItems: true })),
 			}, { additionalProperties: false }),
 			Type.Object({
 				action: Type.Literal("checkpoint"), type: Type.Literal("phase_validation"),
 				runId: Type.String({ minLength: 1, maxLength: 128 }), expectedRevision: Type.Integer({ minimum: 0 }),
-				phase: Type.String({ minLength: 1, maxLength: 256 }), verdict: Type.Union([Type.Literal("PASS"), Type.Literal("BLOCKED")]),
+				phase: Type.String({ minLength: 1, maxLength: 256, pattern: EXECUTION_PHASE_PATTERN, description: EXECUTION_PHASE_DESCRIPTION }), verdict: Type.Union([Type.Literal("PASS"), Type.Literal("BLOCKED")]),
 				report: Type.String({ minLength: 1, maxLength: 100_000 }),
 				changedPaths: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 1024 }), { maxItems: 500, uniqueItems: true })),
 			}, { additionalProperties: false }),
@@ -614,7 +618,7 @@ export default function sprintPlannerExtension(pi: ExtensionAPI) {
 				report: Type.String({ minLength: 1, maxLength: 100_000 }),
 				changedPaths: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 1024 }), { maxItems: 500, uniqueItems: true })),
 			}, { additionalProperties: false })),
-		]),
+		], { type: "object" }),
 		executionMode: "sequential",
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			rootUi = ctx.ui;
@@ -625,7 +629,7 @@ export default function sprintPlannerExtension(pi: ExtensionAPI) {
 				if (!params.sourcePlanPath) throw new Error("sourcePlanPath is required for start.");
 				const normalized = params.sourcePlanPath.replace(/^@/, "");
 				if (!normalized.trim()) throw new Error("A source plan path is required.");
-				const { handle, revision } = await startExecutionRecord(
+				const { handle, revision, source } = await startExecutionRecord(
 					location.internalDevPath,
 					location.projectRoot,
 					normalized,
@@ -636,7 +640,7 @@ export default function sprintPlannerExtension(pi: ExtensionAPI) {
 				executionRecords.set(handle.runId, handle);
 				return {
 					content: [{ type: "text" as const, text: `Execution record ${handle.runId} started at revision ${revision}. Source plan frozen.` }],
-					details: { runId: handle.runId, revision },
+					details: { runId: handle.runId, revision, source },
 				};
 			}
 
@@ -656,7 +660,7 @@ export default function sprintPlannerExtension(pi: ExtensionAPI) {
 					throw new Error("verdict (PASS or BLOCKED) is required for validation checkpoints.");
 				}
 
-				const newRevision = await checkpointExecutionRecord(
+				const checkpoint = await checkpointExecutionRecord(
 					handle,
 					params.expectedRevision,
 					params.type,
@@ -665,9 +669,12 @@ export default function sprintPlannerExtension(pi: ExtensionAPI) {
 					params.report,
 					params.changedPaths,
 				);
+				const warningText = checkpoint.warnings.length
+					? ` Warning: ${checkpoint.warnings.map((warning) => `${warning.message} Paths: ${warning.paths.join(", ")}.`).join(" ")}`
+					: "";
 				return {
-					content: [{ type: "text" as const, text: `Execution record ${params.runId} checkpoint accepted; new revision ${newRevision}.` }],
-					details: { runId: params.runId, revision: newRevision },
+					content: [{ type: "text" as const, text: `Execution record ${params.runId} checkpoint accepted; new revision ${checkpoint.revision}.${warningText}` }],
+					details: { runId: params.runId, revision: checkpoint.revision, warnings: checkpoint.warnings },
 				};
 			}
 
