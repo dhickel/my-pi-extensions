@@ -1,0 +1,20 @@
+{
+  "name": "pi-subagents-extension",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "keywords": ["pi-package"],
+  "scripts": {
+    "test": "node --experimental-strip-types --test test/*.test.ts"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
+  "pi": {
+    "extensions": ["./index.ts"]
+  }
+}
+
