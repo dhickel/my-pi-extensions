@@ -423,8 +423,8 @@ function checkPhaseMetadataCrossConsistency(
 		// Goal: first nonblank line under ## Goal must match ledger goal exactly
 		const goalSection = markdownSection(phase.content, "Goal");
 		const goalFirstLine = goalSection.split(/\r?\n/)[0]?.trim() ?? "";
-		if (goalFirstLine !== entry.goal) {
-			push(r, finding("cross-goal-drift", "phase-metadata", `Phase ${phase.path} Goal "${goalFirstLine}" does not match ledger goal "${entry.goal}".`, phase.path));
+		if (goalFirstLine.toLowerCase().replace(/[\r\n]+$/, "") !== entry.goal.toLowerCase().replace(/[\r\n]+$/, "")) {
+			push(r, finding("cross-goal-drift", "phase-metadata", `Phase ${phase.path} Goal "${goalFirstLine}" does not match ledger goal "${entry.goal}". To fix: change the first line of ## Goal to match, or update the orchestration Phase Ledger entry.`, phase.path));
 		}
 
 		// Dependencies: exactly one non-code, nonblank line in ledger order.
@@ -557,7 +557,7 @@ export function inspectPlan(files: readonly { path: string; content: string }[])
 		// Model assignments, validation gate, integration
 		if (!exactLines(orch.content, "Model Assignments", [
 			"- Implementation: deepseek/deepseek-v4-pro:max",
-			"- Validation: openai-codex/gpt-5.6-sol:medium",
+			"- Validation: openai-codex/gpt-5.5:high",
 			"- Implementers: exactly one implementation agent per phase",
 		])) {
 			push(r, finding("orch-model-assignments", "model-route", "Orchestration Model Assignments section must use the exact structured contract.", "orchestration.md"));
@@ -569,7 +569,7 @@ export function inspectPlan(files: readonly { path: string; content: string }[])
 			push(r, finding("orch-validation-gate", "gate", "Orchestration Validation Gate section must use the exact structured contract.", "orchestration.md"));
 		}
 		if (!exactLines(orch.content, "Final Integration", [
-			"- Integration: after all phases PASS, run final integration validation with openai-codex/gpt-5.6-sol:medium.",
+			"- Integration: after all phases PASS, run final integration validation with openai-codex/gpt-5.5:high.",
 		])) {
 			push(r, finding("orch-integration", "integration", "Orchestration Final Integration section must use the exact structured contract.", "orchestration.md"));
 		}

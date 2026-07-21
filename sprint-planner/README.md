@@ -88,7 +88,7 @@ The skill calls `sprint_validate_plan` for generated plans before starting, then
 Its fixed delegated model contract is:
 
 - phase implementation: `deepseek/deepseek-v4-pro` at `max`, exactly one implementer per phase;
-- independent review-and-repair validation of every phase and final integration: `openai-codex/gpt-5.6-sol` at `medium`.
+- independent review-and-repair validation of every phase and final integration: `openai-codex/gpt-5.5` at `high`.
 
 The skill must not substitute another model or thinking level. It performs an atomic model preflight before edits and stops with the concrete error if either tuple is unavailable. Preflight children receive exactly `tools: []`; DeepSeek implementers and GPT phase/integration validators receive exactly `tools: ["read", "grep", "find", "ls", "bash", "edit", "write"]`. Tool names and fingerprints are validated as a complete spawn batch before any child initializes. Each GPT validator has in-scope edit authority, fixes defects itself, reruns checks, and returns only `VERDICT: PASS` or `VERDICT: BLOCKED`; there is no read-only verdict mode, `VERDICT: REPAIR`, or separate DeepSeek repair loop. Dependents wait for PASS.
 

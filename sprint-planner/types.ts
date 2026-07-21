@@ -18,7 +18,7 @@ export const MODEL_ROUTES = {
 	ironoutReviewer: { provider: "openai-codex", model: "gpt-5.6-sol", thinking: "medium" },
 	advancedPlanner: { provider: "openai-codex", model: "gpt-5.6-sol", thinking: "high" },
 	advancedAdvisor: { provider: "openai-codex", model: "gpt-5.6-sol", thinking: "max" },
-	advancedReviewer: { provider: "openai-codex", model: "gpt-5.6-sol", thinking: "medium" },
+	advancedReviewer: { provider: "openai-codex", model: "gpt-5.5", thinking: "high" },
 } as const satisfies Record<string, ModelTuple>;
 
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";

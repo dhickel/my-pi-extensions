@@ -1,9 +1,9 @@
 ---
 name: orchestrate
-description: Execute complex workflows, raw task directives, checklists, or phased plan files with dependency-aware sequential or safe parallel subagents. Uses DeepSeek Pro V4 at max for implementation and GPT-5.6 Sol at medium to validate every phase. Use when the user asks to orchestrate, execute, or implement a multi-phase or long-running workflow.
-compatibility: Requires Pi with subagent_spawn, subagent_poll, subagent_status, and subagent_cancel; configured deepseek/deepseek-v4-pro max and openai-codex/gpt-5.6-sol medium model tuples; sprint_validate_plan and sprint_execution_record tools.
+description: Execute complex workflows, raw task directives, checklists, or phased plan files with dependency-aware sequential or safe parallel subagents. Uses DeepSeek Pro V4 at max for implementation and GPT-5.5 at high to validate every phase. Use when the user asks to orchestrate, execute, or implement a multi-phase or long-running workflow.
+compatibility: Requires Pi with subagent_spawn, subagent_poll, subagent_status, and subagent_cancel; configured deepseek/deepseek-v4-pro max and openai-codex/gpt-5.5 high model tuples; sprint_validate_plan and sprint_execution_record tools.
 metadata:
-  version: "3.1.0"
+  version: "3.2.0"
 ---
 
 # Orchestrate
@@ -18,14 +18,14 @@ Use exactly these tuples for delegated work:
   - `provider`: `deepseek`
   - `model`: `deepseek-v4-pro`
   - `thinkingLevel`: `max`
-- Post-phase review-and-repair and final integration — GPT-5.6 Sol:
+- Post-phase review-and-repair and final integration — GPT-5.5:
   - `provider`: `openai-codex`
-  - `model`: `gpt-5.6-sol`
-  - `thinkingLevel`: `medium`
+  - `model`: `gpt-5.5`
+  - `thinkingLevel`: `high`
 
-Never inherit, omit, downgrade, clamp, or substitute either tuple. If a required model, authentication, or thinking level is unavailable, stop before implementation and report the exact failure. In particular, do not replace GPT-5.6 Sol with another GPT version.
+Never inherit, omit, downgrade, clamp, or substitute either tuple. If a required model, authentication, or thinking level is unavailable, stop before implementation and report the exact failure. In particular, do not replace GPT-5.5 with another GPT version.
 
-Implementation self-reports, root inspection, and test output do not replace independent GPT-5.6 Sol medium phase validation.
+Implementation self-reports, root inspection, and test output do not replace independent GPT-5.5 high phase validation.
 
 ## Global estimate prohibition
 
@@ -80,8 +80,8 @@ Run this preflight only after authoritative input resolution, successful generat
       "name": "preflight-gpt-<unique>",
       "task": "Return READY without reading or modifying the project.",
       "provider": "openai-codex",
-      "model": "gpt-5.6-sol",
-      "thinkingLevel": "medium",
+      "model": "gpt-5.5",
+      "thinkingLevel": "high",
       "tools": []
     }
   ]
@@ -240,8 +240,8 @@ Spawn each phase validator:
       "name": "validate-<phase-id>-<unique>",
       "task": "<phase contract, implementation report, concept and orchestration context, and full validation brief>",
       "provider": "openai-codex",
-      "model": "gpt-5.6-sol",
-      "thinkingLevel": "medium",
+      "model": "gpt-5.5",
+      "thinkingLevel": "high",
       "tools": ["read", "grep", "find", "ls", "bash", "edit", "write"]
     }
   ]
@@ -311,8 +311,8 @@ After every phase has a checkpointed `VERDICT: PASS`, launch one GPT-5.6 Sol `me
       "name": "integration-<unique>",
       "task": "<integration contract, all phase verdicts, concepts.md, and user directive>",
       "provider": "openai-codex",
-      "model": "gpt-5.6-sol",
-      "thinkingLevel": "medium",
+      "model": "gpt-5.5",
+      "thinkingLevel": "high",
       "tools": ["read", "grep", "find", "ls", "bash", "edit", "write"]
     }
   ]
@@ -331,9 +331,46 @@ After integration PASS is checkpointed, call `sprint_execution_record` with `act
 
 For non-success outcomes (unresolved BLOCKED, interrupted, or cancelled), cancel active children when required and poll every launched or cancelled child to a terminal state. Then checkpoint available evidence and all terminal child outcomes before finishing with the truthful non-success terminal state. `finish: blocked` is valid while the latest verdict for a phase or integration remains BLOCKED. Always pass the latest revision. Stale-revision rejection is a blocker.
 
-## Completion
+## Phase closeout — changelog and git commit
 
-Before reporting completion:
+After each phase validation `PASS` is checkpointed and BEFORE opening the dependent barrier, the root orchestrator must:
+
+1. **Create or update a changelog entry** under `.internal-dev/changelogs/` using the `internal_dev` tool with `kind: "changelog"`. Include:
+   - Phase name and goal
+   - Changed files (from the checkpoint evidence)
+   - Behavioral impact summary
+   - Specification impact (or "none" with one-sentence justification)
+   - Risks and follow-up items
+2. **Stage all changed files** (`git add -A`) and **commit** with a descriptive message:
+   ```
+   feat: <phase-name> — <concise summary>
+   ```
+3. Push only when the integration gate also passes.
+
+Delegated agents (implementers and validators) do not commit or write changelogs. The root orchestrator owns all version-control side effects so it can batch or correct them without replaying agent work.
+
+## Branch workflow for multi-phase plans
+
+Before the first implementation agent of a multi-phase plan starts, the root orchestrator must:
+
+1. Create a dedicated Git branch from the current HEAD:
+   ```bash
+   git checkout -b sprint/<plan-id>
+   ```
+2. Work all phases on that branch. Commit after each phase validation `PASS` as described above.
+3. After final integration `PASS` and all closeout steps, merge back to master:
+   ```bash
+   git checkout master
+   git merge --no-ff sprint/<plan-id> -m "feat: <plan-title>"
+   ```
+   The `--no-ff` flag preserves the branch topology for easy rollback.
+4. Delete the branch locally (and remotely if pushed) after a successful merge.
+
+This keeps master linear for small fixes while allowing full sprint rollback via `git revert` of the merge commit or `git reset` to pre-sprint master.
+
+For single-phase or trivial work, committing directly to master after each phase closeout is acceptable.
+
+## Completion
 
 1. Confirm every phase and final integration have independent checkpointed `VERDICT: PASS`.
 2. Review the final diff or changed-file set for scope and accidental edits.
