@@ -1,9 +1,9 @@
 ---
 name: senior-agent
 description: Use this skill to escalate difficult engineering work to a senior engineer subagent when the current agent is stuck, a bug or failed implementation resists normal debugging, architectural or design concerns need diagnosis, or an implementation, repair, or review needs expert completion. Always runs the escalation with openai-codex/gpt-5.6-sol at xhigh reasoning. Do not use for routine work or ordinary parallelization.
-compatibility: Requires Pi with the subagent_spawn, subagent_poll, and subagent_status tools, configured authentication for openai-codex/gpt-5.6-sol, and xhigh reasoning support.
+compatibility: Requires Pi with the subagent_spawn, subagent_poll, and subagent_status tools, configured authentication for openai-codex/gpt-5.6-sol, and xhigh reasoning support. A direct subagent caller must have been launched with allowSubagents enabled.
 metadata:
-  version: "2.0.0"
+  version: "3.0.0"
 ---
 
 # Senior Agent
@@ -20,24 +20,24 @@ Do not perform the senior escalation in the caller's own model context. Always l
 
 These values must never be inherited, omitted, downgraded, or replaced. Pi's canonical provider identifier for the Codex provider is `openai-codex`.
 
-If `subagent_spawn` or `subagent_poll` is unavailable, or the required model, authentication, or thinking level is rejected, do not emulate the senior agent with another model. Report that the escalation could not run and include the concrete failure.
+If `subagent_spawn` or `subagent_poll` is unavailable, or the required model, authentication, or thinking level is rejected, do not emulate the senior agent with another model. Report that the escalation could not run and include the concrete failure. When the caller is itself a direct subagent, these controls are available only if the root explicitly launched it with `allowSubagents: true`; escalation agents cannot spawn another layer.
 
 ## Exact tool policy
 
-The subagent implementation validates every spawn batch atomically before any child initializes. If any requested tool is inactive, unavailable, forbidden, duplicated, or fingerprint-mismatched, the complete batch is rejected and no child starts. Never reduce a required tool set to make a rejected spawn succeed.
+The subagent implementation validates every spawn batch atomically before any child initializes. If any requested tool is unregistered, forbidden, duplicated, or fingerprint-mismatched, the complete batch is rejected and no child starts. A registered tool does not need to be active in the caller: naming it in the exact allowlist enables it for the child. The fixed sets below intentionally use only tools registered in the standard coding harness; edit-authorized agents perform search and listing through `bash` rather than requesting separate `grep`, `find`, or `ls` tool APIs.
 
 The escalation brief must explicitly determine which tool set applies:
 
 - **Advisory** (diagnose, review, recommend, or ambiguous authority) — exactly:
   ```json
-  "tools": ["read", "grep", "find", "ls"]
+  "tools": ["read"]
   ```
 - **Edit-authorized** (implement, repair, or complete with explicit edit authority) — exactly:
   ```json
-  "tools": ["read", "grep", "find", "ls", "bash", "edit", "write"]
+  "tools": ["read", "bash", "edit", "write"]
   ```
 
-When the escalation brief does not explicitly grant edit authority, use the advisory tool set and prohibit edits. The senior agent must not receive subagent, sprint validation, sprint execution, user-questioning, or other root-only tools. Excluded tool definitions and guidance never enter child context.
+When the escalation brief does not explicitly grant edit authority, use the advisory tool set and prohibit edits. The senior agent must not receive subagent, sprint validation, sprint execution, user-questioning, or other root-only tools. Never set `allowSubagents: true` on the senior agent: the supported hierarchy ends at this escalation layer. Excluded tool definitions and guidance never enter child context.
 
 ## When to escalate
 
@@ -83,7 +83,7 @@ Choose a short, descriptive name that has not been used in the current root sess
       "provider": "openai-codex",
       "model": "gpt-5.6-sol",
       "thinkingLevel": "xhigh",
-      "tools": ["read", "grep", "find", "ls"]
+      "tools": ["read"]
     }
   ]
 }
@@ -100,7 +100,7 @@ Choose a short, descriptive name that has not been used in the current root sess
       "provider": "openai-codex",
       "model": "gpt-5.6-sol",
       "thinkingLevel": "xhigh",
-      "tools": ["read", "grep", "find", "ls", "bash", "edit", "write"]
+      "tools": ["read", "bash", "edit", "write"]
     }
   ]
 }
@@ -112,7 +112,7 @@ Do not launch multiple senior agents for the same unresolved question. Multiple 
 
 Include these expectations in the delegated task when they are relevant:
 
-- Inspect the repository and reproduce or verify the problem before making confident claims.
+- Inspect the repository and reproduce or verify the problem before making confident claims. In edit-authorized mode, use `bash` for search and listing commands; advisory mode is limited to reading explicitly identified paths.
 - Separate verified facts from inference; identify the root cause rather than only treating symptoms.
 - Evaluate system boundaries and downstream effects, not just the immediately failing line.
 - Preserve unrelated and uncommitted work.

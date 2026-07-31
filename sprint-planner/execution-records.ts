@@ -55,7 +55,7 @@ const MANIFEST_FILENAME = "manifest.md";
 const MAX_REPORT_BYTES = 100_000;
 const MAX_CHANGED_PATHS = 500;
 const IMPL_TUPLE: ModelTuple = { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" };
-const VAL_TUPLE: ModelTuple = { provider: "openai-codex", model: "gpt-5.5", thinking: "high" };
+const VAL_TUPLE: ModelTuple = { provider: "openai-codex", model: "gpt-5.6-terra", thinking: "high" };
 const mutationQueues = new Map<string, Promise<void>>();
 
 function errorCode(error: unknown): string | undefined {

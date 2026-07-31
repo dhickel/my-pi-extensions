@@ -557,7 +557,7 @@ export function inspectPlan(files: readonly { path: string; content: string }[])
 		// Model assignments, validation gate, integration
 		if (!exactLines(orch.content, "Model Assignments", [
 			"- Implementation: deepseek/deepseek-v4-pro:max",
-			"- Validation: openai-codex/gpt-5.5:high",
+			"- Validation: openai-codex/gpt-5.6-terra:high",
 			"- Implementers: exactly one implementation agent per phase",
 		])) {
 			push(r, finding("orch-model-assignments", "model-route", "Orchestration Model Assignments section must use the exact structured contract.", "orchestration.md"));
@@ -569,7 +569,7 @@ export function inspectPlan(files: readonly { path: string; content: string }[])
 			push(r, finding("orch-validation-gate", "gate", "Orchestration Validation Gate section must use the exact structured contract.", "orchestration.md"));
 		}
 		if (!exactLines(orch.content, "Final Integration", [
-			"- Integration: after all phases PASS, run final integration validation with openai-codex/gpt-5.5:high.",
+			"- Integration: after all phases PASS, run final integration validation with openai-codex/gpt-5.6-terra:high.",
 		])) {
 			push(r, finding("orch-integration", "integration", "Orchestration Final Integration section must use the exact structured contract.", "orchestration.md"));
 		}

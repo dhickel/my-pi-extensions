@@ -4,6 +4,7 @@ import test from "node:test";
 import {
 	buildToolCatalog,
 	capModelOutput,
+	CHILD_ALWAYS_FORBIDDEN_TOOL_NAMES,
 	CHILD_EXCLUDED_TOOL_NAMES,
 	compareToolFingerprints,
 	emptyUsage,
@@ -11,6 +12,7 @@ import {
 	fingerprintToolDef,
 	MAX_ASSISTANT_TURNS,
 	MAX_CONCURRENT_AGENTS,
+	MAX_SUBAGENT_DEPTH,
 	type ResultPageResponse,
 	type SubagentResult,
 	THINKING_LEVELS,
@@ -18,6 +20,7 @@ import {
 	type ChildHandle,
 	type ChildRunResult,
 	type ModelDescriptor,
+	SUBAGENT_CONTROL_TOOL_NAMES,
 	SubagentManager,
 	type ThinkingLevel,
 	type ToolCatalog,
@@ -59,19 +62,20 @@ function makeTool(
 /** Build a minimal catalog with the given active tool names. */
 function catalogWithActive(...names: string[]): ToolCatalog {
 	const tools = names.map((n) => makeTool(n));
-	return buildToolCatalog(tools, names, [...CHILD_EXCLUDED_TOOL_NAMES]);
+	return buildToolCatalog(tools, names, [...CHILD_ALWAYS_FORBIDDEN_TOOL_NAMES]);
 }
 
 const readTool = makeTool("read", { promptGuidelines: ["Use read to inspect files."] });
 const bashTool = makeTool("bash", { promptGuidelines: undefined });
 const editTool = makeTool("edit", { promptGuidelines: ["Use edit for precise changes."] });
 const grepTool = makeTool("grep");
+const subagentControlTools = SUBAGENT_CONTROL_TOOL_NAMES.map((name) => makeTool(name));
 
 function defaultCatalog(): ToolCatalog {
 	return buildToolCatalog(
-		[readTool, bashTool, editTool, grepTool],
-		["read", "bash", "edit", "grep"],
-		[...CHILD_EXCLUDED_TOOL_NAMES],
+		[readTool, bashTool, editTool, grepTool, ...subagentControlTools],
+		["read", "bash", "edit", "grep", ...SUBAGENT_CONTROL_TOOL_NAMES],
+		[...CHILD_ALWAYS_FORBIDDEN_TOOL_NAMES],
 	);
 }
 
@@ -79,6 +83,8 @@ function validation(overrides: Record<string, unknown> = {}) {
 	return {
 		activeCount: 0,
 		lifetimeNames: new Set<string>(),
+		managerDepth: 0,
+		maxSubagentDepth: MAX_SUBAGENT_DEPTH,
 		currentModel: model,
 		currentThinkingLevel: "high" as ThinkingLevel,
 		findModel(provider: string, id: string) {
@@ -100,7 +106,13 @@ function validation(overrides: Record<string, unknown> = {}) {
 }
 
 function managerValidation(manager: SubagentManager) {
-	const { activeCount: _active, lifetimeNames: _names, ...context } = validation({
+	const {
+		activeCount: _active,
+		lifetimeNames: _names,
+		managerDepth: _depth,
+		maxSubagentDepth: _maxDepth,
+		...context
+	} = validation({
 		activeCount: manager.activeCount,
 		lifetimeNames: manager.lifetimeNames,
 	});
@@ -240,12 +252,32 @@ test("catalog snapshot is immutable and preserves fingerprints deterministically
 
 // ── tools field validation ─────────────────────────────────────
 
-test("tools omission rejects with descriptive error", () => {
-	const spec = { name: "a", task: "x" } as unknown as AgentSpec;
-	assert.throws(
-		() => validateSpawnBatch([spec], validation()),
-		/tools must be an array/,
+test("tools omission grants every registered child-allowed ordinary tool", () => {
+	const ordinaryTools = ["read", "bash", "edit", "grep"];
+	const [resolved] = validateSpawnBatch([{ name: "a", task: "x" }], validation());
+	assert.deepEqual(resolved.expectedTools.map((tool) => tool.name), ordinaryTools);
+	assert.equal(resolved.allowSubagents, false);
+
+	const [delegator] = validateSpawnBatch(
+		[{ name: "delegator", task: "x", allowSubagents: true }],
+		validation(),
 	);
+	assert.deepEqual(
+		delegator.expectedTools.map((tool) => tool.name),
+		[...ordinaryTools, ...SUBAGENT_CONTROL_TOOL_NAMES],
+	);
+});
+
+test("default all-tools mode includes inactive definitions but excludes forbidden and control tools", () => {
+	const askTools = CHILD_ALWAYS_FORBIDDEN_TOOL_NAMES.map((name) => makeTool(name));
+	const inactiveTool = makeTool("inactive");
+	const catalog = buildToolCatalog(
+		[readTool, inactiveTool, ...subagentControlTools, ...askTools],
+		["read", ...SUBAGENT_CONTROL_TOOL_NAMES, ...CHILD_ALWAYS_FORBIDDEN_TOOL_NAMES],
+		[...CHILD_ALWAYS_FORBIDDEN_TOOL_NAMES],
+	);
+	const [resolved] = validateSpawnBatch([{ name: "defaulted", task: "x" }], validation({ catalog }));
+	assert.deepEqual(resolved.expectedTools.map((tool) => tool.name), ["read", "inactive"]);
 });
 
 test("tools non-array rejects", () => {
@@ -289,20 +321,17 @@ test("unknown tool name rejects with distinct message", () => {
 	);
 });
 
-test("inactive tool name rejects with distinct message", () => {
+test("explicit allowlists may enable registered tools that are inactive in the caller", () => {
 	const catalog = buildToolCatalog(
 		[readTool, bashTool],
 		["read"], // bash is registered but not active
 		[],
 	);
-	assert.throws(
-		() =>
-			validateSpawnBatch(
-				[{ name: "a", task: "x", tools: ["read", "bash"] }],
-				validation({ catalog }),
-			),
-		/is not active/,
+	const [resolved] = validateSpawnBatch(
+		[{ name: "a", task: "x", tools: ["read", "bash"] }],
+		validation({ catalog }),
 	);
+	assert.deepEqual(resolved.expectedTools.map((tool) => tool.name), ["read", "bash"]);
 });
 
 test("forbidden tool request rejects with distinct message", () => {
@@ -316,12 +345,13 @@ test("forbidden tool request rejects with distinct message", () => {
 	);
 });
 
-test("tools: [] is accepted as explicit no-tools", () => {
+test("tools: [] is accepted as explicit no-tools and nested spawning defaults off", () => {
 	const [resolved] = validateSpawnBatch(
 		[{ name: "a", task: "x", tools: [] }],
 		validation(),
 	);
 	assert.deepEqual(resolved.expectedTools, []);
+	assert.equal(resolved.allowSubagents, false);
 });
 
 test("valid tools subset resolves fingerprints in request order", () => {
@@ -333,6 +363,70 @@ test("valid tools subset resolves fingerprints in request order", () => {
 	assert.equal(resolved.expectedTools[0].name, "grep");
 	assert.equal(resolved.expectedTools[1].name, "read");
 	assert.equal(resolved.expectedTools[2].name, "bash");
+});
+
+test("allowSubagents appends the complete managed control bundle only when opted in", () => {
+	const [resolved] = validateSpawnBatch(
+		[{ name: "escalator", task: "x", tools: ["read"], allowSubagents: true }],
+		validation(),
+	);
+	assert.equal(resolved.allowSubagents, true);
+	assert.deepEqual(
+		resolved.expectedTools.map((tool) => tool.name),
+		["read", ...SUBAGENT_CONTROL_TOOL_NAMES],
+	);
+});
+
+test("allowSubagents may enable registered control tools that are inactive in the caller", () => {
+	const catalog = buildToolCatalog(
+		[readTool, ...subagentControlTools],
+		["read"],
+		[...CHILD_ALWAYS_FORBIDDEN_TOOL_NAMES],
+	);
+	const [resolved] = validateSpawnBatch(
+		[{ name: "delegator", task: "x", tools: [], allowSubagents: true }],
+		validation({ catalog }),
+	);
+	assert.deepEqual(
+		resolved.expectedTools.map((tool) => tool.name),
+		[...SUBAGENT_CONTROL_TOOL_NAMES],
+	);
+});
+
+test("allowSubagents rejects malformed values and missing managed controls atomically", () => {
+	assert.throws(
+		() =>
+			validateSpawnBatch(
+				[{ name: "bad-flag", task: "x", tools: [], allowSubagents: "yes" as unknown as boolean }],
+				validation(),
+			),
+		/allowSubagents must be a boolean/,
+	);
+
+	const incompleteNames = ["read", ...SUBAGENT_CONTROL_TOOL_NAMES.slice(0, -1)];
+	assert.throws(
+		() =>
+			validateSpawnBatch(
+				[{ name: "missing-control", task: "x", tools: ["read"], allowSubagents: true }],
+				validation({ catalog: catalogWithActive(...incompleteNames) }),
+			),
+		/Managed subagent tool "subagent_cancel".*not registered/,
+	);
+});
+
+test("only root children can receive the one-layer nested delegation grant", () => {
+	assert.throws(
+		() =>
+			validateSpawnBatch(
+				[{ name: "too-deep", task: "x", tools: [], allowSubagents: true }],
+				validation({ managerDepth: 1 }),
+			),
+		/only root children may spawn one nested delegation layer/,
+	);
+	assert.throws(
+		() => validateSpawnBatch([{ name: "impossible", task: "x", tools: [] }], validation({ managerDepth: 2 })),
+		/may nest only one layer/,
+	);
 });
 
 test("requesting all forbidden names is rejected for each", () => {
@@ -389,30 +483,33 @@ test("catalog construction failure (active without definition) throws before any
 	);
 });
 
-test("inactive tool in a valid catalog rejects spawn before initialization", async () => {
+test("inactive registered tool in a valid catalog is enabled during initialization", async () => {
 	let initialized = 0;
+	let initializedTools: string[] = [];
+	const handle = new ControlledHandle();
 	const manager = new SubagentManager({
 		adapter: {
-			async initialize() {
+			async initialize(spec) {
 				initialized++;
-				return new ControlledHandle();
+				initializedTools = spec.expectedTools.map((tool) => tool.name);
+				return handle;
 			},
 		},
 	});
-	// Catalog is valid (bash registered but not active), agent requests inactive tool.
+	// Catalog is valid (bash registered but not active), and the explicit allowlist enables it for the child.
 	const catalog = buildToolCatalog([readTool, bashTool], ["read"], []);
-	await assert.rejects(
-		manager.spawn(
-			[{ name: "a", task: "x", tools: ["bash"] }],
-			{
-				...managerValidation(manager),
-				catalog,
-			},
-		),
-		/is not active/,
+	const [spawned] = await manager.spawn(
+		[{ name: "a", task: "x", tools: ["bash"] }],
+		{
+			...managerValidation(manager),
+			catalog,
+		},
 	);
-	assert.equal(initialized, 0);
-	assert.equal(manager.status().length, 0);
+	assert.equal(initialized, 1);
+	assert.deepEqual(initializedTools, ["bash"]);
+	assert.equal(spawned.status, "running");
+	assert.equal(handle.runStarted, true);
+	await manager.cancel({ all: true });
 });
 
 // ── Compare fingerprints (pure unit) ───────────────────────────
@@ -580,6 +677,72 @@ test("the eight-agent limit accounts for both batch size and active capacity", (
 	);
 });
 
+test("the concurrency cap is shared across the complete root and nested tree", async () => {
+	const rootHandles = new Map<string, ControlledHandle>();
+	const root = new SubagentManager({
+		maxConcurrent: 2,
+		adapter: {
+			async initialize(spec) {
+				const handle = new ControlledHandle();
+				rootHandles.set(spec.name, handle);
+				return handle;
+			},
+		},
+	});
+	const nestedHandle = new ControlledHandle();
+	const nested = new SubagentManager({
+		scope: root.createChildScope(),
+		adapter: { initialize: async () => nestedHandle },
+	});
+
+	await root.spawn(
+		[{ name: "delegator", task: "x", tools: [], allowSubagents: true }],
+		managerValidation(root),
+	);
+	await nested.spawn([{ name: "senior", task: "y", tools: [] }], managerValidation(nested));
+	assert.equal(root.activeCount, 2);
+	assert.equal(nested.activeCount, 2);
+	await assert.rejects(
+		root.spawn([{ name: "overflow", task: "z", tools: [] }], managerValidation(root)),
+		/tree concurrency limit/,
+	);
+
+	await Promise.all([root.cancel({ all: true }), nested.cancel({ all: true })]);
+	assert.equal(root.activeCount, 0);
+	assert.equal(nested.activeCount, 0);
+	assert.equal(rootHandles.get("delegator")!.aborted, true);
+	assert.equal(nestedHandle.aborted, true);
+});
+
+test("a nested manager may spawn one agent but cannot grant another layer", async () => {
+	let initialized = 0;
+	const root = new SubagentManager({
+		adapter: { initialize: async () => new ControlledHandle() },
+	});
+	const nested = new SubagentManager({
+		scope: root.createChildScope(),
+		adapter: {
+			async initialize() {
+				initialized++;
+				return new ControlledHandle();
+			},
+		},
+	});
+
+	await assert.rejects(
+		nested.spawn(
+			[{ name: "recursive", task: "x", tools: [], allowSubagents: true }],
+			managerValidation(nested),
+		),
+		/only root children may spawn one nested delegation layer/,
+	);
+	assert.equal(initialized, 0);
+
+	await nested.spawn([{ name: "nested-task", task: "x", tools: [] }], managerValidation(nested));
+	assert.equal(initialized, 1);
+	await nested.cancel({ all: true });
+});
+
 test("invalid batches do not initialize or reserve any member", async () => {
 	let initialized = 0;
 	const manager = new SubagentManager({
@@ -650,6 +813,37 @@ test("initialization failure fails the whole batch before tasks run and disposes
 	assert.equal(first.runStarted, false);
 	assert.equal(first.disposed, true);
 	assert.match(launched[0].error!, /before any task started: tool mismatch/);
+});
+
+test("initialization failure aborts a still-initializing sibling and fails the batch promptly", async () => {
+	let siblingAborted = false;
+	const manager = new SubagentManager({
+		adapter: {
+			async initialize(spec, _scope, signal) {
+				if (spec.name === "bad") throw new Error("broken initializer");
+				return new Promise<ChildHandle>((_resolve, reject) => {
+					const abort = () => {
+						siblingAborted = true;
+						reject(new Error("sibling initialization aborted"));
+					};
+					if (signal.aborted) abort();
+					else signal.addEventListener("abort", abort, { once: true });
+				});
+			},
+		},
+	});
+
+	const launched = await manager.spawn(
+		[
+			{ name: "bad", task: "x", tools: [] },
+			{ name: "stuck", task: "y", tools: [] },
+		],
+		managerValidation(manager),
+	);
+	assert.deepEqual(launched.map((agent) => agent.status), ["failed", "failed"]);
+	assert.match(launched[0].error!, /broken initializer/);
+	assert.equal(siblingAborted, true);
+	assert.equal(manager.activeCount, 0);
 });
 
 test("starting and running agents contribute to footer counts", async () => {
@@ -859,6 +1053,121 @@ test("explicit cancellation and root shutdown abort and dispose active runtimes"
 		),
 		/shutting down/,
 	);
+});
+
+test("cancellation during cascading disposal cannot publish a stale completed result", async () => {
+	const disposalStarted = deferred<void>();
+	const releaseDisposal = deferred<void>();
+	const manager = new SubagentManager({
+		adapter: {
+			async initialize() {
+				return {
+					provider: "test",
+					model: "wide",
+					thinkingLevel: "high",
+					async run() { return success("finished before cancellation"); },
+					abort() {},
+					async dispose() {
+						disposalStarted.resolve();
+						await releaseDisposal.promise;
+					},
+				};
+			},
+		},
+	});
+
+	await manager.spawn([{ name: "dispose-race", task: "x", tools: [] }], managerValidation(manager));
+	await disposalStarted.promise;
+	const cancelling = manager.cancel({ all: true });
+	await tick();
+	releaseDisposal.resolve();
+	const [result] = await cancelling;
+	assert.equal(result.status, "cancelled");
+	assert.match(result.error!, /Cancelled/);
+});
+
+test("parent cancellation cascades to its nested manager before root cancellation settles", async () => {
+	const parentCompletion = deferred<ChildRunResult>();
+	const escalationHandle = new ControlledHandle();
+	let nested!: SubagentManager;
+	let parentDisposeCalls = 0;
+
+	const parentHandle: ChildHandle = {
+		provider: "test",
+		model: "wide",
+		thinkingLevel: "high",
+		run: () => parentCompletion.promise,
+		async abort() {
+			parentCompletion.resolve({ ...success(""), stopReason: "aborted" });
+			await nested.shutdown("Parent subagent was aborted.");
+		},
+		async dispose() {
+			parentDisposeCalls++;
+			await nested.shutdown("Parent subagent ended.");
+		},
+	};
+	const root = new SubagentManager({
+		adapter: {
+			async initialize(_spec, childScope) {
+				nested = new SubagentManager({
+					scope: childScope,
+					adapter: { initialize: async () => escalationHandle },
+				});
+				return parentHandle;
+			},
+		},
+	});
+
+	await root.spawn(
+		[{ name: "delegator", task: "x", tools: [], allowSubagents: true }],
+		managerValidation(root),
+	);
+	await nested.spawn([{ name: "senior", task: "y", tools: [] }], managerValidation(nested));
+	assert.equal(root.activeCount, 2);
+
+	const cancelled = await root.cancel({ all: true });
+	assert.equal(cancelled[0].status, "cancelled");
+	assert.equal(root.activeCount, 0);
+	assert.equal(nested.status()[0].status, "cancelled");
+	assert.equal(escalationHandle.aborted, true);
+	assert.equal(escalationHandle.disposed, true);
+	assert.equal(parentDisposeCalls, 1);
+});
+
+test("ordinary parent completion disposes its nested subtree before publishing the result", async () => {
+	const parentCompletion = deferred<ChildRunResult>();
+	const escalationHandle = new ControlledHandle();
+	let nested!: SubagentManager;
+	const root = new SubagentManager({
+		adapter: {
+			async initialize(_spec, childScope) {
+				nested = new SubagentManager({
+					scope: childScope,
+					adapter: { initialize: async () => escalationHandle },
+				});
+				return {
+					provider: "test",
+					model: "wide",
+					thinkingLevel: "high",
+					run: () => parentCompletion.promise,
+					abort() { parentCompletion.resolve({ ...success(""), stopReason: "aborted" }); },
+					async dispose() { await nested.shutdown("Parent subagent ended."); },
+				};
+			},
+		},
+	});
+
+	await root.spawn(
+		[{ name: "delegator-natural", task: "x", tools: [], allowSubagents: true }],
+		managerValidation(root),
+	);
+	await nested.spawn([{ name: "left-behind", task: "y", tools: [] }], managerValidation(nested));
+	parentCompletion.resolve(success("parent done"));
+	const result = (await root.poll({ timeoutSeconds: 1 })).results[0];
+	assert.equal(result.status, "completed");
+	assert.equal(root.activeCount, 0);
+	assert.equal(nested.status()[0].status, "cancelled");
+	assert.equal(escalationHandle.aborted, true);
 });
 
 test("the assistant turn cutoff aborts before turn 301", async () => {
@@ -1606,8 +1915,14 @@ test("after detachment, status does not change and snapshot remains immutable", 
 test("cancel interrupts never-settling initialization and disposes a late handle without starting it", async () => {
 	const initialization = deferred<ChildHandle>();
 	const lateHandle = new ControlledHandle();
+	let initializationSignal: AbortSignal | undefined;
 	const manager = new SubagentManager({
-		adapter: { initialize: () => initialization.promise },
+		adapter: {
+			initialize(_spec, _scope, signal) {
+				initializationSignal = signal;
+				return initialization.promise;
+			},
+		},
 		boundScheduler: async () => undefined,
 	});
 	const spawning = manager.spawn(
@@ -1617,6 +1932,7 @@ test("cancel interrupts never-settling initialization and disposes a late handle
 	await tick();
 
 	const cancelled = await manager.cancel({ all: true });
+	assert.equal(initializationSignal?.aborted, true);
 	assert.equal(cancelled[0].status, "cancelled");
 	assert.equal(manager.activeCount, 0);
 	assert.equal((await spawning)[0].status, "cancelled");
@@ -1630,8 +1946,14 @@ test("cancel interrupts never-settling initialization and disposes a late handle
 
 test("shutdown interrupts never-settling initialization with cancelled root accounting", async () => {
 	const initialization = deferred<ChildHandle>();
+	let initializationSignal: AbortSignal | undefined;
 	const manager = new SubagentManager({
-		adapter: { initialize: () => initialization.promise },
+		adapter: {
+			initialize(_spec, _scope, signal) {
+				initializationSignal = signal;
+				return initialization.promise;
+			},
+		},
 		boundScheduler: async () => undefined,
 	});
 	const spawning = manager.spawn(
@@ -1641,6 +1963,7 @@ test("shutdown interrupts never-settling initialization with cancelled root acco
 	await tick();
 
 	await manager.shutdown("Root session reload.");
+	assert.equal(initializationSignal?.aborted, true);
 	assert.equal(manager.activeCount, 0);
 	const result = (await spawning)[0];
 	assert.equal(result.status, "cancelled");

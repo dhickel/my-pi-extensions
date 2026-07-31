@@ -1,8 +1,7 @@
-import { lstat, readFile, readdir } from "node:fs/promises";
+import { lstat, mkdir, readFile, readdir, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import {
 	assertSafeRelativePath,
-	atomicCreateFile,
 	atomicCreateOwnedFile,
 	publishDirectoryExclusively,
 	removeOwnedDirectory,
@@ -242,6 +241,52 @@ async function rollbackPublications(publications: readonly OwnedPublication[]): 
 		if (!removed) complete = false;
 	}
 	return complete;
+}
+
+const standaloneStagingRoots = new WeakMap<RunArtifactStore, { dev: string; ino: string }>();
+
+async function createStandaloneStaging(parent: string, id: string): Promise<RunArtifactStore> {
+	const selectedId = assertSafeRelativePath(id);
+	if (selectedId.includes("/")) throw new Error("A standalone workflow id must be one path segment.");
+	const selectedParent = resolve(parent);
+	const parentEntry = await lstat(selectedParent);
+	if (!parentEntry.isDirectory() || parentEntry.isSymbolicLink()) throw new Error("Standalone publication parent is not a regular directory.");
+	const stagingDirectory = resolve(selectedParent, `${selectedId}-staging`);
+	try {
+		await mkdir(stagingDirectory);
+	} catch (error) {
+		if (fsCode(error) === "EEXIST") throw new Error(`Standalone staging directory already exists: ${stagingDirectory}`);
+		throw error;
+	}
+	const entry = await lstat(stagingDirectory);
+	if (!entry.isDirectory() || entry.isSymbolicLink()) throw new Error(`Standalone staging path is not a regular directory: ${stagingDirectory}`);
+	const store = new RunArtifactStore(stagingDirectory);
+	standaloneStagingRoots.set(store, { dev: String(entry.dev), ino: String(entry.ino) });
+	return store;
+}
+
+async function writeStagedFiles(store: RunArtifactStore, prefix: string, files: readonly SubmittedFile[]): Promise<void> {
+	for (const file of files) {
+		const path = prefix ? `${prefix}/${assertSafeRelativePath(file.path)}` : assertSafeRelativePath(file.path);
+		await store.write(path, file.content);
+	}
+}
+
+async function readStagedFiles(store: RunArtifactStore, prefix: string, paths: readonly string[]): Promise<SubmittedFile[]> {
+	return Promise.all(paths.map(async (path) => {
+		const selected = assertSafeRelativePath(path);
+		return { path: selected, content: await store.read(prefix ? `${prefix}/${selected}` : selected) };
+	}));
+}
+
+async function removeStandaloneStaging(store: RunArtifactStore): Promise<void> {
+	const expected = standaloneStagingRoots.get(store);
+	const entry = await lstat(store.runDirectory);
+	if (!expected || !entry.isDirectory() || entry.isSymbolicLink() || String(entry.dev) !== expected.dev || String(entry.ino) !== expected.ino) {
+		throw new Error(`Standalone staging directory ownership could not be proven: ${store.runDirectory}`);
+	}
+	await rm(store.runDirectory, { recursive: true });
+	standaloneStagingRoots.delete(store);
 }
 
 class PausedError extends Error {}
@@ -791,6 +836,22 @@ export class SprintPlannerEngine {
 				throw new PausedError(state.error);
 			}
 
+			// Artifact persistence — operational failure (not retryable).
+			// Persist BEFORE semantic validation so generated artifacts are not lost
+			// if validation fails (e.g. phase review goal mismatch). The step will retry
+			// validation on subsequent attempts, potentially overwriting these artifacts.
+			let artifacts: ArtifactRecord[];
+			try {
+				artifacts = await persist(submission);
+			} catch (error) {
+				const msg = errorText(error);
+				step.error = msg;
+				step.status = "failed";
+				state.error = `${id} artifact persistence failed: ${msg}`;
+				await this.#saveState();
+				throw new PausedError(state.error);
+			}
+
 			// Semantic validation.
 			try {
 				validate(submission);
@@ -810,19 +871,8 @@ export class SprintPlannerEngine {
 				throw new PausedError(state.error);
 			}
 
-			// Artifact persistence — operational failure (not retryable).
-			let artifacts: ArtifactRecord[];
-			try {
-				artifacts = await persist(submission);
-			} catch (error) {
-				const msg = errorText(error);
-				step.error = msg;
-				step.status = "failed";
-				state.error = `${id} artifact persistence failed: ${msg}`;
-				await this.#saveState();
-				throw new PausedError(state.error);
-			}
-
+			// Remap per-session artifact paths through persisted artifacts once
+			// validation passes.
 			step.artifacts = artifacts;
 			step.status = "completed";
 			step.completedAt = now();
@@ -1247,14 +1297,31 @@ export class SprintPlannerEngine {
 		this.#emitProgress();
 	}
 
+	#reportStandaloneValidationFailure(error: unknown, stagingDirectory: string): void {
+		this.#progressStatus = "failed";
+		this.#lastStep = "final validation";
+		const progress = this.progress;
+		try {
+			if (progress) this.callbacks.onProgress?.({
+				...progress,
+				error: `${errorText(error)} Staged artifacts retained at ${stagingDirectory}.`,
+			});
+		} catch {
+			// Validation failures must retain and rethrow the original error even if reporting fails.
+		}
+	}
+
 	#request(options: StandaloneRunOptions, request: Omit<WorkerRequest, "cwd" | "persistent">): WorkerRequest {
 		return { ...request, cwd: resolve(options.projectRoot), persistent: false };
 	}
 
 	async runStandaloneBrainstorm(options: StandaloneRunOptions): Promise<string> {
 		this.#startStandalone("brainstorm", options);
+		const parent = resolve(options.internalDevPath, "brainstorm");
+		const staging = await createStandaloneStaging(parent, options.id);
 		const count = normalizeAgents(options.agents);
 		const rolesResult = await this.#standaloneCall(this.#request(options, { id: `${options.id}-route`, role: "brainstorm role router", model: MODEL_ROUTES.roleRouter, mode: "planning", prompt: routeRolesPrompt(options.directive, count), contextPaths: [], expectation: { kind: "roles" } }));
+		await staging.write("roles.json", rolesResult.content!);
 		const roles = validateRoles(rolesResult.content, count);
 
 		// Scoped fan-out for standalone findings.
@@ -1263,7 +1330,13 @@ export class SprintPlannerEngine {
 		);
 		const findings = await scopedFanOut(findingFactories, this.#controller!.signal, "standalone-findings");
 		const findingReports = findings.map((submission, index) => ({ path: `${roles[index].id}/findings.md`, content: submission.content! }));
-		validateBrainstormFindings(findingReports, roles.map((role) => `${role.id}/findings.md`));
+		await writeStagedFiles(staging, "", findingReports);
+		try {
+			validateBrainstormFindings(findingReports, roles.map((role) => `${role.id}/findings.md`));
+		} catch (error) {
+			this.#reportStandaloneValidationFailure(error, staging.runDirectory);
+			throw error;
+		}
 
 		// Scoped fan-out for standalone cross-reviews.
 		const crossFactories = roles.map((role) => (signal: AbortSignal) =>
@@ -1271,38 +1344,72 @@ export class SprintPlannerEngine {
 		);
 		const crosses = await scopedFanOut(crossFactories, this.#controller!.signal, "standalone-cross-reviews");
 
-		const allReports = [...findingReports, ...crosses.map((submission, index) => ({ path: `${roles[index].id}/cross-review.md`, content: submission.content! }))];
+		const crossReports = crosses.map((submission, index) => ({ path: `${roles[index].id}/cross-review.md`, content: submission.content! }));
+		await writeStagedFiles(staging, "", crossReports);
+		const allReports = [...findingReports, ...crossReports];
 		const allReportPaths = allReports.map((item) => item.path);
 		const synthesis = await this.#standaloneCall(this.#request(options, { id: `${options.id}-synthesis`, role: "brainstorm synthesizer", model: MODEL_ROUTES.brainstormSynthesis, mode: "planning", prompt: synthesisPrompt(options.directive, allReports), contextPaths: allReports.map((item) => item.path), expectation: markdownExpectation(BRAINSTORM_HEADINGS) }));
-		validateSynthesisCoverage(synthesis.content!, allReportPaths);
+		await staging.write("synthesis.md", synthesis.content!);
+		try {
+			validateSynthesisCoverage(synthesis.content!, allReportPaths);
+		} catch (error) {
+			this.#reportStandaloneValidationFailure(error, staging.runDirectory);
+			throw error;
+		}
 		const redTeam = await this.#standaloneCall(this.#request(options, { id: `${options.id}-red-team`, role: "brainstorm red team", model: MODEL_ROUTES.brainstormRedTeam, mode: "planning", prompt: redTeamPrompt(synthesis.content!), contextPaths: ["synthesis.md"], expectation: markdownExpectation(BRAINSTORM_HEADINGS) }));
-		const parent = resolve(options.internalDevPath, "brainstorm");
-		return (await publishDirectoryExclusively(parent, options.id, [...allReports, { path: "synthesis.md", content: synthesis.content! }, { path: "red-team.md", content: redTeam.content! }])).path;
+		await staging.write("red-team.md", redTeam.content!);
+		const finalPaths = [...allReportPaths, "synthesis.md", "red-team.md"];
+		const publication = await publishDirectoryExclusively(parent, options.id, await readStagedFiles(staging, "", finalPaths));
+		try {
+			await removeStandaloneStaging(staging);
+		} catch (error) {
+			if (!(await removeOwnedDirectory(publication))) throw new Error(`${errorText(error)} Publication rollback stopped because ownership could not be proven.`);
+			throw error;
+		}
+		return publication.path;
 	}
 
 	async runStandaloneIronout(options: StandaloneRunOptions): Promise<string> {
 		this.#startStandalone("ironout", options);
+		const parent = resolve(options.internalDevPath, "handoffs");
+		const staging = await createStandaloneStaging(parent, options.id);
 		const draft = await this.#standaloneCall(
 			this.#request(options, { id: `${options.id}-author`, role: "ironout author", model: MODEL_ROUTES.ironoutAuthor, mode: "planning", prompt: ironoutPrompt(options.directive, [], options.interactive !== false), contextPaths: [], expectation: markdownExpectation(HANDOFF_HEADINGS), allowQuestions: options.interactive !== false, maxQuestionRounds: 3 }),
 			(submission) => validateHandoff(submission.content!),
 		);
+		await staging.write("draft.md", draft.content!);
 		const reviewed = await this.#standaloneCall(
 			this.#request(options, { id: `${options.id}-review`, role: "corrective ironout reviewer", model: MODEL_ROUTES.ironoutReviewer, mode: "planning", prompt: ironoutReviewPrompt(draft.content!), contextPaths: [], expectation: { kind: "files", allowedPaths: ["review.md", "handoff.md"], requiredPaths: ["review.md", "handoff.md"], minFiles: 2, maxFiles: 2, headings: { "review.md": REVIEW_HEADINGS, "handoff.md": HANDOFF_HEADINGS } } }),
 			(submission) => validateHandoff(filesByPath(submission).get("handoff.md")!),
 		);
-		const handoff = filesByPath(reviewed).get("handoff.md")!;
-		validateHandoff(handoff);
-		const target = resolve(options.internalDevPath, "handoffs", `${options.id}.md`);
-		await atomicCreateFile(target, handoff.endsWith("\n") ? handoff : `${handoff}\n`);
+		await writeStagedFiles(staging, "", reviewed.files!);
+		const handoff = await staging.read("handoff.md");
+		try {
+			validateHandoff(handoff);
+		} catch (error) {
+			this.#reportStandaloneValidationFailure(error, staging.runDirectory);
+			throw error;
+		}
+		const target = resolve(parent, `${options.id}.md`);
+		const publication = await atomicCreateOwnedFile(target, handoff);
+		try {
+			await removeStandaloneStaging(staging);
+		} catch (error) {
+			if (!(await removeOwnedFile(publication))) throw new Error(`${errorText(error)} Publication rollback stopped because ownership could not be proven.`);
+			throw error;
+		}
 		return target;
 	}
 
 	async runStandaloneAdvancePlan(options: StandaloneRunOptions): Promise<string> {
 		this.#startStandalone("advanceplan", options);
+		const plansParent = resolve(options.internalDevPath, "plans");
+		const staging = await createStandaloneStaging(plansParent, options.id);
 		const draft = await this.#standaloneCall(
 			this.#request(options, { id: `${options.id}-plan`, role: "advanced planner", model: MODEL_ROUTES.advancedPlanner, mode: "planning", prompt: advancedPlanPrompt(options.directive), contextPaths: [], expectation: { kind: "files", minFiles: 4, maxFiles: 12 }, maxSeniorCalls: 2, seniorModel: MODEL_ROUTES.advancedAdvisor }),
 			(submission) => validateDraftPlanShape(submission.files!),
 		);
+		await writeStagedFiles(staging, "planning-draft", draft.files!);
 
 		// ── Decomposition correction gate ──
 		const decomp = await this.#standaloneCall(
@@ -1316,6 +1423,8 @@ export class SprintPlannerEngine {
 		);
 		const decompositionReview = decomp.files!.find((file) => file.path === "review.md")!.content;
 		const correctedFiles = decomp.files!.filter((file) => file.path !== "review.md");
+		await writeStagedFiles(staging, "planning-corrected", correctedFiles);
+		await staging.write("reviews/advanced-plan-components/decomposition.md", decompositionReview);
 		validatePlanFiles(correctedFiles);
 		const names = planNames(correctedFiles);
 		const phasePaths = names.filter((path) => path !== "concepts.md" && path !== "orchestration.md");
@@ -1329,6 +1438,8 @@ export class SprintPlannerEngine {
 		);
 		const conceptMap = filesByPath(conceptReview);
 		const correctedConcepts = { path: "concepts.md", content: conceptMap.get("concepts.md")! };
+		await staging.write("planning-review-draft/concepts.md", correctedConcepts.content);
+		await staging.write("reviews/advanced-plan-components/concepts.md", conceptMap.get("review.md")!);
 		const componentReviews = [{ path: "decomposition.md", content: decompositionReview }, { path: "concepts.md", content: conceptMap.get("review.md")! }];
 
 		// Orchestration review.
@@ -1339,6 +1450,8 @@ export class SprintPlannerEngine {
 		const orchMap = filesByPath(orchReview);
 		componentReviews.push({ path: "orchestration.md", content: orchMap.get("review.md")! });
 		const correctedOrchestration = { path: "orchestration.md", content: orchMap.get("orchestration.md")! };
+		await staging.write("planning-review-draft/orchestration.md", correctedOrchestration.content);
+		await staging.write("reviews/advanced-plan-components/orchestration.md", orchMap.get("review.md")!);
 
 		// Concurrent phase reviews via scoped fan-out.
 		const phaseFactories = phasePaths.map((phasePath) => (signal: AbortSignal) => {
@@ -1351,22 +1464,38 @@ export class SprintPlannerEngine {
 		});
 		const phaseSubmissions = await scopedFanOut(phaseFactories, this.#controller!.signal, "standalone-phase-reviews");
 
-		// Assemble in frozen phase order.
+		// Assemble in frozen phase order and durably retain every phase correction.
+		const phaseReviews: SubmittedFile[] = [];
 		const correctedPhases: SubmittedFile[] = phaseSubmissions.map((submission, index) => {
 			const map = filesByPath(submission);
-			componentReviews.push({ path: phasePaths[index], content: map.get("review.md")! });
+			const review = { path: phasePaths[index], content: map.get("review.md")! };
+			phaseReviews.push(review);
+			componentReviews.push(review);
 			return { path: phasePaths[index], content: map.get(phasePaths[index])! };
 		});
+		await writeStagedFiles(staging, "planning-review-draft", correctedPhases);
+		await writeStagedFiles(staging, "reviews/advanced-plan-components", phaseReviews);
 
 		const plan = [correctedConcepts, correctedOrchestration, ...correctedPhases];
-		validatePlanFiles(plan);
+		await writeStagedFiles(staging, "planning", plan);
+		const stagedPlan = await readStagedFiles(staging, "planning", plan.map((file) => file.path));
+		try {
+			validatePlanFiles(stagedPlan);
+		} catch (error) {
+			this.#reportStandaloneValidationFailure(error, staging.runDirectory);
+			throw error;
+		}
 		const reviewSummary = summarizePlanReviews(componentReviews);
 		const reviewPath = resolve(options.internalDevPath, "reviews", `${options.id}-advanced-plan-review.md`);
-		const reviewPublication = await atomicCreateOwnedFile(reviewPath, reviewSummary);
+		const owned: OwnedPublication[] = [];
 		try {
-			return (await publishDirectoryExclusively(resolve(options.internalDevPath, "plans"), options.id, plan)).path;
+			owned.push(await atomicCreateOwnedFile(reviewPath, reviewSummary));
+			const planPublication = await publishDirectoryExclusively(plansParent, options.id, stagedPlan);
+			owned.push(planPublication);
+			await removeStandaloneStaging(staging);
+			return planPublication.path;
 		} catch (error) {
-			if (!(await removeOwnedFile(reviewPublication))) throw new Error(`${errorText(error)} Review rollback stopped because ownership could not be proven.`);
+			if (!(await rollbackPublications(owned))) throw new Error(`${errorText(error)} Publication rollback stopped because ownership could not be proven.`);
 			throw error;
 		}
 	}

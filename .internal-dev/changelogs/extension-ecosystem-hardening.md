@@ -6,60 +6,63 @@
 
 ## Git Commit
 
-Not applicable — no Git repository was detected at the project root.
+462622124ae7ac3c5539423621ba3dfe0c453412
 
 ## Change Summary
 
-Reconciled the sprint-planner, subagents, and internal-dev living contracts and public documentation with the hardened implementation. This validator corrected the sprint-planner README's public tool count and added the exact child tool routes. The required isolated provider-backed acceptance pipeline remains unverified, so this record does not claim phase completion.
+Completed the deterministic final integration review across sprint-planner, subagents, internal-dev, and user-questioning. Repaired the execution-record start response so callers receive the persisted immutable source descriptor required by the orchestrate contract, corrected public fingerprint documentation, and fixed two start-path defects found against a validated standalone advanced plan: standalone planning provenance ids were rejected, and valid branching wave order could fail frozen-record parsing. Clarified the orchestrate skill's exact path, provenance-id, and finish payload contracts. The required isolated provider-backed acceptance pipeline still has no repository evidence, so the overall integration verdict remains blocked rather than claiming completion.
 
 ## Files
 
-Phase-09 source targets inspected or changed:
+Final-integration edits:
 
+- `sprint-planner/execution-records.ts`
+- `sprint-planner/index.ts`
+- `sprint-planner/test/core.test.ts`
+- `sprint-planner/README.md`
+- `sprint-planner/skills/orchestrate/SKILL.md`
+- `subagents/README.md`
 - `.internal-dev/specifications/sprint-planner-suite.md`
-- `.internal-dev/specifications/decisions.md`
 - `.internal-dev/knowledge/sprint-planner-runtime-contracts.md`
 - `.internal-dev/changelogs/extension-ecosystem-hardening.md`
-- `sprint-planner/package.json`
-- `subagents/package.json`
-- `internal-dev/package.json`
-- `user-questioning/package.json`
-- `sprint-planner/README.md`
-- `sprint-planner.md`
-- `subagents/README.md`
-- `subagents.md`
-
-A separately dated changelog created before validation exists at `.internal-dev/changelogs/2026-07-20-extension-ecosystem-hardening.md`; it is outside this phase's exact write target and was not rewritten.
+- `.internal-dev/changelogs/2026-07-20-extension-ecosystem-hardening.md`
+- `.internal-dev/reviews/2026-07-20-extension-ecosystem-final-integration-review.md`
 
 ## Behavioral Impact
 
-No runtime code changed in phase 09. Package manifests expose their extension and skill resources and declare the imported Pi packages at the consuming boundaries. Public documentation now describes the five sprint-planner tools, four subagent tools, flat root-owned subagent pool, read-only discovery and diagnosis, immutable source plans, durable execution-only evidence, explicit recovery, and exact orchestrate model and tool routes.
+`sprint_execution_record start` now returns `source` alongside `runId` and `revision`. The source value is a detached copy of the persisted immutable descriptor containing the canonical source path, aggregate digest, and per-file hashes and byte counts. This makes the public tool response coherent with the orchestrate skill's requirement to retain returned source identity and hashes.
+
+Standalone plan publications at `.internal-dev/plans/<id>` now accept `<id>` as `sourcePlanningRunId`, matching persisted sprint-plan provenance at `.internal-dev/sprints/<id>/planning`. Frozen wave assignments are normalized to phase-ledger key order, so a validator-approved branching topology no longer fails because JavaScript object insertion order followed wave traversal order.
+
+The orchestrate skill now requires canonical project-relative plan paths, documents the exact optional provenance-id forms, and uses the tool schema's `type: "completed"` finish discriminator instead of the nonexistent `terminalState` field.
+
+Subagent documentation now accurately states that fingerprints include prompt guidance and source metadata in addition to name, description, and parameter schema.
 
 ## Specification Impact
 
-Updated `.internal-dev/specifications/sprint-planner-suite.md` and `.internal-dev/specifications/decisions.md` to cover run leases, structured plan validation, execution-only evidence, exact child permissions, bounded detachment, and validator-owned repair. Updated `.internal-dev/knowledge/sprint-planner-runtime-contracts.md` with confirmed reusable runtime facts.
+Updated `.internal-dev/specifications/sprint-planner-suite.md` to specify the complete execution-record start response, both canonical planning provenance layouts, and phase-ledger-order normalization for frozen wave maps.
 
 ## Validation Evidence
 
-- `npm --prefix sprint-planner test` — PASS, 199 tests.
+- `npm --prefix sprint-planner test` — PASS, 202 tests, including returned-source, standalone provenance-id, mismatched-id rejection, and branching-wave freeze regressions.
+- Exact Magenta plan `.internal-dev/plans/20260720-004112-home-dhickel-code-java-magenta-internal-dev-ha` — PASS through `startExecutionRecord` in an isolated temporary execution store: revision 0, 10 frozen phases, 8 preserved wave assignments, and the standalone planning id persisted.
 - `npm --prefix subagents test` — PASS, 70 tests.
 - `npm --prefix internal-dev test` — PASS, 66 tests.
 - `npm --prefix user-questioning test` — PASS, 12 tests.
-- Pi RPC `get_commands` with the package extension and skill — PASS: extension commands are `sprint`, `brainstorm`, `ironout`, and `advanceplan`; `skill:orchestrate` resolves to the package skill; no extension `/orchestrate` is exposed.
 - `npm pack --dry-run --json` in all four package directories — PASS.
-- Package manifest/keyword and module-aware import-to-peer-dependency audits — PASS.
-- Current-source searches found no actionable nested-agent support, inherited child-tool policy, validator repair handoff, stale GPT-5.5 route, or automatic-resume claim.
-- The isolated provider-backed acceptance pipeline was not completed; this validation therefore remains BLOCKED despite passing deterministic checks.
+- Pi RPC `get_commands` with the sprint-planner extension and explicit orchestrate skill — PASS: four extension commands, `skill:orchestrate` present, no extension `/orchestrate`.
+- Module import-to-peer-dependency audit — PASS.
+- Public command/tool, stale-route, dead-API, nested-agent, repair-loop, version-constant, and diff checks — PASS after repairs.
+- Structured validation of the accepted hardening source plan — expected legacy incompatibility: current version-1 validation reports phase goal, dependency, and write-target cross-consistency findings; historical plan bytes were preserved as required by phase 09.
+- Isolated eight-worker brainstorm → ironout → advance-plan → orchestrate acceptance pipeline — NOT VERIFIED; no preserved execution records or equivalent evidence exist under `.internal-dev/sprints/` or the review/changelog stores.
 
 ## Risks
 
-- The workspace has no Git repository, so no Git HEAD exists; the Git Commit section records that fact.
-- The phase-required isolated eight-worker brainstorm → ironout → advance-plan → orchestrate acceptance pipeline has no preserved evidence and was not runnable through the validator's available tools.
-- No durable phase-08 PASS record was found in the inspected plan or sprint records.
-- A separate final integration gate remains correctly ordered after phase 09 and has not run.
+- The concepts and phase-09 exit criteria require provider-backed acceptance evidence, byte-identical source-plan checks, reload inspection, durable phase PASS checkpoints, and a durable acceptance-run integration PASS. Those artifacts are absent, and the available validation tool surface cannot run the required complete provider pipeline.
+- The source baseline is the dirty-worktree Git `HEAD` shown above; the final-integration repairs are not represented by that commit.
+- A Pi runtime that loaded the extension before these source edits must run `/reload` or restart before `sprint_execution_record` uses the repaired implementation.
 
 ## Follow-up Items
 
-- Run and preserve the isolated eight-worker provider-backed acceptance pipeline, including source-plan before/after hashes, reload inspection, phase PASS evidence, and final integration PASS evidence.
-- Supply a repository-backed Git baseline if the workspace is intended to satisfy the phase's explicit full-HEAD requirement.
-- Record phase-08 PASS before retrying phase-09 completion validation.
+- Run and preserve the isolated eight-worker provider-backed acceptance pipeline required by `concepts.md` and phase 09.
+- Re-run final integration after that evidence exists; do not record terminal PASS before the criterion is satisfied.

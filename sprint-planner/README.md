@@ -35,7 +35,7 @@ After installation or source updates, run `/reload` or restart Pi.
   - `doctor` — read-only diagnosis of a selected sprint record with severity-graded findings. Performs no writes, releases, clearing, or takeover.
 - `/brainstorm [--agents 2..8] <prompt>` runs findings → same-session all-to-all cross-review → synthesis → red team. Supports `status` and `cancel`.
 - `/ironout [--interactive|--auto] <prompt>` runs standalone handoff authoring and corrective review. Interactive mode uses up to 3 rounds of at most 3 choice questions. Supports `status` and `cancel`.
-- `/advanceplan <prompt>` runs advanced planning with concept, orchestration, and per-phase corrective reviews. Supports `status` and `cancel`.
+- `/advanceplan <prompt>` runs advanced planning with concept, orchestration, and per-phase corrective reviews. Plans use practical one-session sizing (roughly 200,000–300,000 tokens maximum) and divide overly large cohesive phases into ordered lettered subphases, with validation only after all subphases complete. Supports `status` and `cancel`.
 
 Bare start commands open Pi's editor. Input may be a plain request, pasted material, a path, or natural language referring to paths. The command layer preserves it as prompt text; planning agents interpret references with read-only project tools.
 
@@ -88,7 +88,7 @@ The skill calls `sprint_validate_plan` for generated plans before starting, then
 Its fixed delegated model contract is:
 
 - phase implementation: `deepseek/deepseek-v4-pro` at `max`, exactly one implementer per phase;
-- independent review-and-repair validation of every phase and final integration: `openai-codex/gpt-5.5` at `high`.
+- independent review-and-repair validation of every phase and final integration: `openai-codex/gpt-5.6-terra` at `high`.
 
 The skill must not substitute another model or thinking level. It performs an atomic model preflight before edits and stops with the concrete error if either tuple is unavailable. Preflight children receive exactly `tools: []`; DeepSeek implementers and GPT phase/integration validators receive exactly `tools: ["read", "grep", "find", "ls", "bash", "edit", "write"]`. Tool names and fingerprints are validated as a complete spawn batch before any child initializes. Each GPT validator has in-scope edit authority, fixes defects itself, reruns checks, and returns only `VERDICT: PASS` or `VERDICT: BLOCKED`; there is no read-only verdict mode, `VERDICT: REPAIR`, or separate DeepSeek repair loop. Dependents wait for PASS.
 

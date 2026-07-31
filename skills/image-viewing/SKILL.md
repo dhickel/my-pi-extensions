@@ -3,7 +3,7 @@ name: image-viewing
 description: Delegates image inspection to openai-codex/gpt-5.6-sol at medium reasoning and returns a detailed, request-focused visual summary. Use only when image analysis is required and the current model is known not to support image input; never use when the current model can view images or when its capability is merely uncertain.
 compatibility: Requires Pi with the read, subagent_spawn, subagent_poll, and subagent_status tools, configured authentication for openai-codex/gpt-5.6-sol, medium reasoning support, and each image available to the child as a readable local file.
 metadata:
-  version: "2.0.0"
+  version: "2.1.0"
 ---
 
 # Image Viewing
@@ -43,7 +43,7 @@ If the required tools, model, authentication, reasoning level, or image files ar
 
 ## Exact tool policy
 
-The subagent implementation validates every spawn batch atomically before any child initializes. If any requested tool is inactive, unavailable, forbidden, duplicated, or fingerprint-mismatched, the complete batch is rejected and no child starts.
+The subagent implementation validates every spawn batch atomically before any child initializes. If any requested tool is unregistered, forbidden, duplicated, or fingerprint-mismatched, the complete batch is rejected and no child starts. A registered tool does not need to be active in the caller: naming it in the exact allowlist enables it for the child.
 
 The vision subagent is inspection-only. It receives exactly:
 

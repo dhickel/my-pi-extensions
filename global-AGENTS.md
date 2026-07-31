@@ -33,6 +33,7 @@ The globally installed `internal-dev` extension owns project trust, `.internal-d
 - Give the senior agent a self-contained brief. For an authorized implementation task, allow it to diagnose and advise or to edit and validate directly, whichever best unblocks the outcome. Do not broaden the user's authorization.
 - Follow the skill's fixed provider, model, and thinking contract. Poll it to completion, inspect its reasoning and edits, integrate the result, and independently confirm relevant validation. Never accept its output blindly or substitute a weaker fallback model.
 - If escalation cannot run or cannot resolve the blocker, report the concrete failure, evidence, attempted paths, and exact unfinished scope to the user. Ask only for the decision, access, or external state actually required; do not disguise incomplete work as success or deferred work.
+- When a direct child is expected to own difficult implementation through completion, its root delegation may opt in to subagent controls so it can invoke the senior workflow itself. This grant permits exactly one escalation layer; the senior escalation agent must not receive subagent controls.
 - A child agent without escalation tools must return a precise escalation request to its parent. The parent must invoke the senior workflow and carry the result back into the task.
 
 ## Implementation Style

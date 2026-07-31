@@ -4,6 +4,7 @@ import { clampThinkingLevel, getSupportedThinkingLevels } from "@earendil-works/
 import {
 	createAgentSessionFromServices,
 	createAgentSessionServices,
+	createEventBus,
 	type ExtensionAPI,
 	type ExtensionUIContext,
 	getAgentDir,
@@ -14,7 +15,7 @@ import { Type } from "typebox";
 import {
 	buildToolCatalog,
 	capModelOutput,
-	CHILD_EXCLUDED_TOOL_NAMES,
+	CHILD_ALWAYS_FORBIDDEN_TOOL_NAMES,
 	compareToolFingerprints,
 	fingerprintActiveToolDefs,
 	type AgentSpec,
@@ -23,6 +24,8 @@ import {
 	type ModelDescriptor,
 	type ResolvedAgentSpec,
 	type ResultPageResponse,
+	SUBAGENT_CHILD_CONFIG_EVENT,
+	type SubagentManagerScope,
 	type SubagentResult,
 	SubagentManager,
 	THINKING_LEVELS,
@@ -33,14 +36,36 @@ import {
 
 const FOOTER_KEY = "subagents";
 
+interface ChildManagerConfiguration {
+	schema: 1;
+	scope: SubagentManagerScope;
+	attach(manager: SubagentManager): void;
+}
+
+function isChildManagerConfiguration(value: unknown): value is ChildManagerConfiguration {
+	if (!value || typeof value !== "object") return false;
+	const candidate = value as Partial<ChildManagerConfiguration>;
+	return candidate.schema === 1 && typeof candidate.attach === "function" && candidate.scope !== undefined;
+}
+
 const agentParameters = Type.Object(
 	{
-		name: Type.String({ description: "A case-insensitively unique name for this root session." }),
+		name: Type.String({ description: "A case-insensitively unique name for this subagent scope." }),
 		task: Type.String({ description: "The complete delegated task. The child receives no caller transcript." }),
-		tools: Type.Array(Type.String(), {
-			description: "Complete exact set of case-sensitive tool API names. Use [] for no project tools.",
-			uniqueItems: true,
-		}),
+		tools: Type.Optional(
+			Type.Array(Type.String(), {
+				description:
+					"Optional exact allowlist of non-subagent, case-sensitive tool API names. Omit to grant all registered child-allowed ordinary tools; use [] to grant none. Explicitly named registered tools are enabled for the child even when inactive in the caller. allowSubagents manages the control bundle separately.",
+				uniqueItems: true,
+			}),
+		),
+		allowSubagents: Type.Optional(
+			Type.Boolean({
+				description:
+					"Opt in to the complete subagent control bundle so this root child can spawn one nested delegation layer. Default false.",
+				default: false,
+			}),
+		),
 		provider: Type.Optional(Type.String({ description: "Provider override; model is required with it." })),
 		model: Type.Optional(Type.String({ description: "Model override; provider is required with it." })),
 		thinkingLevel: Type.Optional(StringEnum(THINKING_LEVELS)),
@@ -77,37 +102,152 @@ function assistantText(message: AssistantMessage | undefined): string {
 		.join("\n");
 }
 
-async function createChild(spec: ResolvedAgentSpec): Promise<ChildHandle> {
+function initializationAbortError(signal: AbortSignal): Error {
+	const reason = signal.reason instanceof Error ? signal.reason.message : String(signal.reason ?? "cancelled");
+	return new Error(`Child initialization aborted: ${reason}`);
+}
+
+function throwIfInitializationAborted(signal: AbortSignal): void {
+	if (signal.aborted) throw initializationAbortError(signal);
+}
+
+function awaitAbortable<T>(
+	promise: Promise<T>,
+	signal: AbortSignal,
+	onLateValue?: (value: T) => void | Promise<void>,
+): Promise<T> {
+	return new Promise<T>((resolve, reject) => {
+		let settled = false;
+		const consumeLateValue = (value: T) => {
+			if (!onLateValue) return;
+			void Promise.resolve(onLateValue(value)).catch(() => undefined);
+		};
+		const onAbort = () => {
+			if (settled) return;
+			settled = true;
+			signal.removeEventListener("abort", onAbort);
+			reject(initializationAbortError(signal));
+		};
+
+		if (signal.aborted) {
+			settled = true;
+			void promise.then(consumeLateValue, () => undefined);
+			reject(initializationAbortError(signal));
+			return;
+		}
+
+		signal.addEventListener("abort", onAbort, { once: true });
+		void promise.then(
+			(value) => {
+				if (settled) {
+					consumeLateValue(value);
+					return;
+				}
+				settled = true;
+				signal.removeEventListener("abort", onAbort);
+				resolve(value);
+			},
+			(error) => {
+				if (settled) return;
+				settled = true;
+				signal.removeEventListener("abort", onAbort);
+				reject(error);
+			},
+		);
+	});
+}
+
+async function createChild(
+	spec: ResolvedAgentSpec,
+	childScope: SubagentManagerScope,
+	signal: AbortSignal,
+): Promise<ChildHandle> {
 	let session: Awaited<ReturnType<typeof createAgentSessionFromServices>>["session"] | undefined;
+	const eventBus = createEventBus();
+	const attachedManagers: SubagentManager[] = [];
+	const stopAttachedManagers = async (reason: string) => {
+		await Promise.allSettled(attachedManagers.map((manager) => manager.shutdown(reason)));
+	};
+
 	try {
-		const services = await createAgentSessionServices({ cwd: spec.cwd, agentDir: getAgentDir() });
+		throwIfInitializationAborted(signal);
+		const services = await awaitAbortable(
+			createAgentSessionServices({
+				cwd: spec.cwd,
+				agentDir: getAgentDir(),
+				resourceLoaderOptions: { eventBus },
+			}),
+			signal,
+			() => eventBus.clear(),
+		);
+		throwIfInitializationAborted(signal);
+		eventBus.emit(SUBAGENT_CHILD_CONFIG_EVENT, {
+			schema: 1,
+			scope: childScope,
+			attach(manager: SubagentManager) {
+				attachedManagers.push(manager);
+			},
+		} satisfies ChildManagerConfiguration);
+		if (attachedManagers.length > 1) {
+			throw new Error("Child loaded multiple subagent managers; refusing ambiguous nested ownership.");
+		}
+		const nestedManager = attachedManagers[0];
+		if (spec.allowSubagents && !nestedManager) {
+			throw new Error("Nested subagent controls were requested, but no child subagent manager was loaded.");
+		}
+
 		const diagnosticErrors = services.diagnostics.filter((diagnostic) => diagnostic.type === "error");
 		if (diagnosticErrors.length > 0) {
 			throw new Error(diagnosticErrors.map((diagnostic) => diagnostic.message).join("; "));
 		}
 
-		const model = services.modelRegistry.find(spec.provider, spec.model);
+		const model = services.modelRuntime.getModel(spec.provider, spec.model);
 		if (!model) throw new Error(`Child could not reproduce model ${spec.provider}/${spec.model}.`);
-		if (!services.modelRegistry.hasConfiguredAuth(model)) {
+		if (!services.modelRuntime.hasConfiguredAuth(model.provider)) {
 			throw new Error(`Child model ${spec.provider}/${spec.model} does not have configured authentication.`);
 		}
 
+		throwIfInitializationAborted(signal);
 		const requestedNames = spec.expectedTools.map((tool) => tool.name);
-		const created = await createAgentSessionFromServices({
-			services,
-			sessionManager: SessionManager.inMemory(spec.cwd),
-			model,
-			thinkingLevel: spec.thinkingLevel,
-			tools: requestedNames,
-			noTools: requestedNames.length === 0 ? "all" : undefined,
-			sessionStartEvent: { type: "session_start", reason: "startup" },
-		});
+		const created = await awaitAbortable(
+			createAgentSessionFromServices({
+				services,
+				sessionManager: SessionManager.inMemory(spec.cwd),
+				model,
+				thinkingLevel: spec.thinkingLevel,
+				tools: requestedNames,
+				noTools: requestedNames.length === 0 ? "all" : undefined,
+				sessionStartEvent: { type: "session_start", reason: "startup" },
+			}),
+			signal,
+			async (lateCreated) => {
+				const stopping = stopAttachedManagers(
+					`Child subagent "${spec.name}" was cancelled during session creation.`,
+				);
+				lateCreated.session.dispose();
+				eventBus.clear();
+				await stopping;
+			},
+		);
 		session = created.session;
+		throwIfInitializationAborted(signal);
 		const extensionErrors: string[] = [];
-		await session.bindExtensions({
-			mode: "print",
-			onError: (error) => extensionErrors.push(`${error.extensionPath}: ${error.error}`),
-		});
+		await awaitAbortable(
+			session.bindExtensions({
+				mode: "print",
+				onError: (error) => extensionErrors.push(`${error.extensionPath}: ${error.error}`),
+			}),
+			signal,
+			async () => {
+				const stopping = stopAttachedManagers(
+					`Child subagent "${spec.name}" was cancelled while binding extensions.`,
+				);
+				session?.dispose();
+				eventBus.clear();
+				await stopping;
+			},
+		);
+		throwIfInitializationAborted(signal);
 		if (extensionErrors.length > 0) throw new Error(extensionErrors.join("; "));
 
 		const actualModel = session.model;
@@ -122,7 +262,8 @@ async function createChild(spec: ResolvedAgentSpec): Promise<ChildHandle> {
 			);
 		}
 
-		// Resolve metadata only for active definitions; configured inactive tools never participate.
+		// Resolve metadata only for definitions active in the child. Requested registered
+		// definitions were activated during child session creation, even if inactive in the caller.
 		const actualTools = fingerprintActiveToolDefs(
 			session.getAllTools() as ToolDef[],
 			session.getActiveToolNames(),
@@ -131,8 +272,9 @@ async function createChild(spec: ResolvedAgentSpec): Promise<ChildHandle> {
 		if (mismatch) throw new Error(mismatch);
 
 		const childSession = session;
-		let disposed = false;
+		let disposePromise: Promise<void> | undefined;
 		let unsubscribe: (() => void) | undefined;
+		const shutdownNested = (reason: string) => nestedManager?.shutdown(reason) ?? Promise.resolve();
 
 		return {
 			provider: childSession.model?.provider ?? spec.provider,
@@ -175,17 +317,28 @@ async function createChild(spec: ResolvedAgentSpec): Promise<ChildHandle> {
 				};
 			},
 			async abort() {
-				await childSession.abort();
+				await Promise.allSettled([
+					childSession.abort(),
+					shutdownNested(`Parent subagent "${spec.name}" was aborted.`),
+				]);
 			},
 			dispose() {
-				if (disposed) return;
-				disposed = true;
-				unsubscribe?.();
-				childSession.dispose();
+				if (disposePromise) return disposePromise;
+				disposePromise = (async () => {
+					unsubscribe?.();
+					const stopping = shutdownNested(`Parent subagent "${spec.name}" ended.`);
+					childSession.dispose();
+					eventBus.clear();
+					await stopping;
+				})();
+				return disposePromise;
 			},
 		};
 	} catch (error) {
+		const stopping = stopAttachedManagers(`Child subagent "${spec.name}" failed during initialization.`);
 		session?.dispose();
+		eventBus.clear();
+		await stopping;
 		throw error;
 	}
 }
@@ -227,6 +380,15 @@ export default function subagentsExtension(pi: ExtensionAPI) {
 		onChange: updateFooter,
 	});
 
+	let childScopeAttached = false;
+	const detachChildConfiguration = pi.events.on(SUBAGENT_CHILD_CONFIG_EVENT, (payload) => {
+		if (!isChildManagerConfiguration(payload)) return;
+		if (childScopeAttached) throw new Error("Child subagent manager was configured more than once.");
+		manager.attachScope(payload.scope);
+		childScopeAttached = true;
+		payload.attach(manager);
+	});
+
 	function rememberContext(ctx: { ui: ExtensionUIContext }) {
 		rootUi = ctx.ui;
 		updateFooter();
@@ -244,7 +406,7 @@ export default function subagentsExtension(pi: ExtensionAPI) {
 		const catalog = buildToolCatalog(
 			pi.getAllTools() as ToolDef[],
 			pi.getActiveTools(),
-			[...CHILD_EXCLUDED_TOOL_NAMES],
+			[...CHILD_ALWAYS_FORBIDDEN_TOOL_NAMES],
 		);
 
 		const currentModel = ctx.model
@@ -271,11 +433,13 @@ export default function subagentsExtension(pi: ExtensionAPI) {
 		name: "subagent_spawn",
 		label: "Spawn subagents",
 		description:
-			"Launch one or more isolated in-memory Pi subagents. Every agent supplies a complete exact tools array (use [] for no project tools). Names are unique for the root session. A batch is validated and initialized atomically before any delegated task starts. Children inherit the caller model, thinking level, and cwd unless model/thinking overrides are supplied. Maximum 8 active agents.",
-		promptSnippet: "Launch isolated subagents as a flat concurrent pool",
+			"Launch one or more isolated in-memory Pi subagents. Omit agents[].tools to enable every registered child-allowed ordinary tool by default; provide an exact allowlist to restrict tools, or [] for none. Explicitly listed registered tools are enabled for the child even when inactive in the caller. allowSubagents is off by default and separately grants the complete control bundle to a root child for exactly one nested delegation layer. Names are unique within their parent session. A batch is validated and initialized atomically before any delegated task starts. Children inherit the caller model, thinking level, and cwd unless model/thinking overrides are supplied. Maximum 8 active agents across the complete tree.",
+		promptSnippet: "Launch isolated subagents with optional one-layer delegation",
 		promptGuidelines: [
 			"After spawning subagents, call subagent_poll until every launched agent reaches a terminal state.",
 			"Give each child a self-contained task because it does not receive the caller transcript.",
+			"All registered child-allowed ordinary tools are enabled by default when tools is omitted. To restrict a child, provide the complete exact allowlist; use tools: [] for no ordinary tools. A caller-inactive tool is valid when registered, but an unregistered tool name is not; in the standard coding harness use bash for grep/find/ls commands rather than requesting separate grep, find, or ls APIs.",
+			"Keep allowSubagents off unless that specific root child must delegate; nested agents cannot spawn again.",
 		],
 		parameters: Type.Object(
 			{ agents: Type.Array(agentParameters, { minItems: 1, maxItems: 8 }) },
@@ -291,7 +455,8 @@ export default function subagentsExtension(pi: ExtensionAPI) {
 			const detail = args.agents
 				.map((agent) => {
 					const model = agent.provider && agent.model ? `${agent.provider}/${agent.model}` : "inherited model";
-					return `${agent.name} (${model}, ${agent.thinkingLevel ?? "inherited thinking"})`;
+					const nesting = agent.allowSubagents ? ", one nested layer" : "";
+					return `${agent.name} (${model}, ${agent.thinkingLevel ?? "inherited thinking"}${nesting})`;
 				})
 				.join(", ");
 			return renderCallText("subagents ", detail, theme);
@@ -394,7 +559,7 @@ export default function subagentsExtension(pi: ExtensionAPI) {
 		name: "subagent_cancel",
 		label: "Cancel subagents",
 		description:
-			"Cancel selected subagents by names, or every subagent with all: true. Active child sessions are aborted and disposed, with a bounded grace period; non-cooperative children are force-terminalized so root accounting always settles. Selected terminal results are marked delivered so they no longer trigger polling reminders.",
+			"Cancel selected subagents by names, or every subagent with all: true. Active child sessions and their owned descendants are aborted and disposed with bounded cascading cleanup; non-cooperative children are force-terminalized so root accounting always settles. Selected terminal results are marked delivered so they no longer trigger polling reminders.",
 		promptSnippet: "Abort and dispose selected subagents",
 		parameters: Type.Object(
 			{ names: namesParameter, all: Type.Optional(Type.Boolean()) },
@@ -430,6 +595,7 @@ export default function subagentsExtension(pi: ExtensionAPI) {
 	});
 
 	pi.on("session_shutdown", async (event) => {
+		detachChildConfiguration();
 		await manager.shutdown(`Root session ${event.reason}.`);
 		try {
 			rootUi?.setStatus(FOOTER_KEY, undefined);

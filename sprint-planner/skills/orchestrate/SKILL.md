@@ -1,9 +1,9 @@
 ---
 name: orchestrate
-description: Execute complex workflows, raw task directives, checklists, or phased plan files with dependency-aware sequential or safe parallel subagents. Uses DeepSeek Pro V4 at max for implementation and GPT-5.5 at high to validate every phase. Use when the user asks to orchestrate, execute, or implement a multi-phase or long-running workflow.
-compatibility: Requires Pi with subagent_spawn, subagent_poll, subagent_status, and subagent_cancel; configured deepseek/deepseek-v4-pro max and openai-codex/gpt-5.5 high model tuples; sprint_validate_plan and sprint_execution_record tools.
+description: Execute complex workflows, raw task directives, checklists, or phased plan files with dependency-aware sequential or safe parallel subagents. Uses DeepSeek Pro V4 at max for implementation and GPT-5.6 Terra at max to validate every phase. Use when the user asks to orchestrate, execute, or implement a multi-phase or long-running workflow.
+compatibility: Requires Pi with subagent_spawn, subagent_poll, subagent_status, and subagent_cancel; configured deepseek/deepseek-v4-pro max and openai-codex/gpt-5.6-terra high model tuples; sprint_validate_plan and sprint_execution_record tools.
 metadata:
-  version: "3.2.0"
+  version: "4.1.0"
 ---
 
 # Orchestrate
@@ -18,14 +18,14 @@ Use exactly these tuples for delegated work:
   - `provider`: `deepseek`
   - `model`: `deepseek-v4-pro`
   - `thinkingLevel`: `max`
-- Post-phase review-and-repair and final integration — GPT-5.5:
+- Post-phase review-and-repair and final integration — GPT-5.6 Terra:
   - `provider`: `openai-codex`
-  - `model`: `gpt-5.5`
+  - `model`: `gpt-5.6-terra`
   - `thinkingLevel`: `high`
 
-Never inherit, omit, downgrade, clamp, or substitute either tuple. If a required model, authentication, or thinking level is unavailable, stop before implementation and report the exact failure. In particular, do not replace GPT-5.5 with another GPT version.
+Never inherit, omit, downgrade, clamp, or substitute either tuple. If a required model, authentication, or thinking level is unavailable, stop before implementation and report the exact failure. In particular, do not replace GPT-5.6 Terra with another GPT version or a different thinking level.
 
-Implementation self-reports, root inspection, and test output do not replace independent GPT-5.5 high phase validation.
+Implementation self-reports, root inspection, and test output do not replace independent GPT-5.6 Terra max phase validation.
 
 ## Global estimate prohibition
 
@@ -33,7 +33,7 @@ Every root report and every delegated report — including implementer, phase-va
 
 ## Tool delegation contract
 
-The subagent implementation validates every spawn batch atomically before any child initializes. If any requested tool is inactive, unavailable, forbidden, duplicated, or fingerprint-mismatched, the complete batch is rejected and no child starts. Never reduce a required tool set to make a rejected spawn succeed.
+The subagent implementation validates every spawn batch atomically before any child initializes. If any requested tool is unregistered, forbidden, duplicated, or fingerprint-mismatched, the complete batch is rejected and no child starts. A registered tool does not need to be active in the caller: naming it in an exact allowlist enables it for the child. The fixed sets below use only APIs registered in the standard coding harness; edit-authorized workers perform search and listing through `bash` instead of requesting separate `grep`, `find`, or `ls` APIs.
 
 Every agent receives exact tool sets:
 
@@ -43,19 +43,19 @@ Every agent receives exact tool sets:
   ```
 - **DeepSeek implementers**:
   ```json
-  "tools": ["read", "grep", "find", "ls", "bash", "edit", "write"]
+  "tools": ["read", "bash", "edit", "write"]
   ```
-- **GPT-5.6 Sol phase/integration validators**:
+- **GPT-5.6 Terra phase/integration validators**:
   ```json
-  "tools": ["read", "grep", "find", "ls", "bash", "edit", "write"]
+  "tools": ["read", "bash", "edit", "write"]
   ```
 - **Senior advisors** (advisory):
   ```json
-  "tools": ["read", "grep", "find", "ls"]
+  "tools": ["read"]
   ```
 - **Senior advisors** (edit-authorized):
   ```json
-  "tools": ["read", "grep", "find", "ls", "bash", "edit", "write"]
+  "tools": ["read", "bash", "edit", "write"]
   ```
 - **Image viewing**: `"tools": ["read"]`
 
@@ -80,7 +80,7 @@ Run this preflight only after authoritative input resolution, successful generat
       "name": "preflight-gpt-<unique>",
       "task": "Return READY without reading or modifying the project.",
       "provider": "openai-codex",
-      "model": "gpt-5.5",
+      "model": "gpt-5.6-terra",
       "thinkingLevel": "high",
       "tools": []
     }
@@ -91,6 +91,16 @@ Run this preflight only after authoritative input resolution, successful generat
 Poll until both reach a terminal state. Confirm the reported provider, model, and thinking level exactly. Because a spawn batch is validated atomically, a rejected tuple or tool set prevents either preflight task from starting.
 
 Do not proceed when either preflight fails.
+
+## Authoritative execution principle
+
+An accepted plan is an immutable contract defined by senior management. The orchestrator's sole role is to execute every phase, feature, criterion, and validation exactly as defined — no more, no less. This means:
+
+- **Never override, reduce, simplify, or reinterpret the plan.** If the plan says 10 phases with 5 features each, deliver exactly that.
+- **Never defer, scaffold, or silently drop work.** A phase that compiles but is not fully wired, sealed, validated, and proven against its acceptance criteria is not complete.
+- **Never concern yourself with plan size, phase count, token budget, session length, or elapsed time.** These are not your concern. Your concern is completing the work as defined.
+- **Never decide something is "too large" or "too complex" to complete.** Use subagents, senior escalation, and parallel waves as designed. The orchestration system exists to handle large plans.
+- **If you hit a genuine blocker,** report it concretely with evidence and continue unaffected work. Never use a blocker as an excuse to scaffold or defer unaffected phases.
 
 ## Interpret the directive
 
@@ -137,9 +147,9 @@ After resolving authoritative input and validating a generated plan, call `sprin
 
 The root owns all sprint tool calls. Do not delegate `sprint_validate_plan` or `sprint_execution_record` to children.
 
-## One phase = one agent
+## One phase = one validation unit
 
-A phase is the atomic implementation unit. One DeepSeek Pro V4 `max` agent owns exactly one complete phase. Phase steps, aspects, bullet points, and subsections are instructions within that delegation and must never be split among multiple child agents.
+A phase is the atomic dependency and validation unit. An unsplit phase maps to one DeepSeek Pro V4 `max` implementation-agent session. When the phase plan explicitly contains contiguous lettered subphases (A, B, C, and so on), each subphase maps to one sequential implementation-agent session. Use the planner's practical sizing judgment; do not calculate or enforce token counts during execution. Complete every subphase in letter order before launching the single phase-level validator. Ordinary steps, aspects, and bullets that are not explicit lettered subphases remain instructions within one delegation and must not be split into extra agents.
 
 ## Schedule work
 
@@ -169,7 +179,7 @@ Limit each implementation or validation wave to four active agents.
 
 ## Delegate implementation
 
-Spawn one DeepSeek Pro V4 `max` agent for each ready phase. Children receive no caller transcript, so every task must be self-contained and include:
+Spawn one DeepSeek Pro V4 `max` agent for each ready unsplit phase, or one at a time for each explicit lettered subphase of a ready phase. Subphases execute sequentially in letter order and share the parent phase's scope, dependencies, and validation gate. Children receive no caller transcript, so every task must be self-contained and include:
 
 - the user objective and settled constraints;
 - the exact assigned phase, source paths, scope, and criteria;
@@ -192,7 +202,7 @@ Example spawn:
       "provider": "deepseek",
       "model": "deepseek-v4-pro",
       "thinkingLevel": "max",
-      "tools": ["read", "grep", "find", "ls", "bash", "edit", "write"]
+      "tools": ["read", "bash", "edit", "write"]
     }
   ]
 }
@@ -202,7 +212,7 @@ Require each implementer to:
 
 1. Inspect assigned files and guides before editing.
 2. Confirm required toolchain executables before substantial edits.
-3. Implement the complete phase without placeholders, stubs, fake behavior, or speculative scope.
+3. Implement the complete assigned phase or lettered subphase without placeholders, stubs, fake behavior, or speculative scope.
 4. Stay within declared write targets unless an unavoidable adjacent change is explained.
 5. Run focused validation, including relevant failures and edge cases.
 6. Return `Summary`, `Files Changed`, `Validation`, `Criteria`, `Remaining Risks`, and `Blockers` sections. Respect the global estimate prohibition: no human time estimates, duration, effort, ETA, or calendar scheduling estimates; operational dependency and wave language remains valid.
@@ -229,7 +239,7 @@ Invalid or stale cursors, digest mismatch, or byte-count mismatch block that evi
 
 ## Validate every phase with review-and-repair
 
-After every implementation attempt for a phase — whether the implementer reported success or failure — launch one GPT-5.6 Sol `medium` review-and-repair agent with full edit authority. Before launching editing validators concurrently, compare the actual files changed by each implementation plus the validator-authorized repair areas and any newly discovered shared artifacts or state. Parallelize only when the write sets remain disjoint after this check; otherwise serialize validators within the same wave. Validators may not start until all implementation agents in that wave have stopped. Do not start dependents until every member of the wave passes.
+After an unsplit phase's implementation attempt, or after every lettered subphase of a split phase has completed, launch one GPT-5.6 Terra `max` review-and-repair agent for the parent phase with full edit authority. Never launch independent validation between a phase's lettered subphases. Before launching editing validators concurrently, compare the actual files changed by each implementation plus the validator-authorized repair areas and any newly discovered shared artifacts or state. Parallelize only when the write sets remain disjoint after this check; otherwise serialize validators within the same wave. Validators may not start until all implementation agents in that wave have stopped. Do not start dependents until every member of the wave passes.
 
 Spawn each phase validator:
 
@@ -240,15 +250,15 @@ Spawn each phase validator:
       "name": "validate-<phase-id>-<unique>",
       "task": "<phase contract, implementation report, concept and orchestration context, and full validation brief>",
       "provider": "openai-codex",
-      "model": "gpt-5.5",
+      "model": "gpt-5.6-terra",
       "thinkingLevel": "high",
-      "tools": ["read", "grep", "find", "ls", "bash", "edit", "write"]
+      "tools": ["read", "bash", "edit", "write"]
     }
   ]
 }
 ```
 
-Each validation brief must include the phase contract, implementation report, `orchestration.md` scheduling context, and `concepts.md`. Require the validator to:
+Each validation brief must include the phase contract, every implementation report for that phase (including all lettered subphase reports), `orchestration.md` scheduling context, and `concepts.md`. Require the validator to:
 
 1. Inspect the actual repository state independently.
 2. Check every phase criterion and applicable project instruction.
@@ -265,7 +275,7 @@ Each validation brief must include the phase contract, implementation report, `o
 
 ### Validator owns repair
 
-There is no `VERDICT: REPAIR` and no separate DeepSeek repair handoff. The GPT validator inspects, edits, and re-validates until every in-scope defect is resolved. A malformed or missing verdict is not a pass; retry once with a fresh uniquely named GPT-5.6 Sol validator inspecting actual state. If the retry is also malformed, record the concrete protocol failure and stop without opening the dependency barrier — a malformed response never becomes PASS, BLOCKED evidence by itself, or a DeepSeek repair request.
+There is no `VERDICT: REPAIR` and no separate DeepSeek repair handoff. The GPT validator inspects, edits, and re-validates until every in-scope defect is resolved. A malformed or missing verdict is not a pass; retry once with a fresh uniquely named GPT-5.6 Terra max validator inspecting actual state. If the retry is also malformed, record the concrete protocol failure and stop without opening the dependency barrier — a malformed response never becomes PASS, BLOCKED evidence by itself, or a DeepSeek repair request.
 
 ### BLOCKED handling
 
@@ -275,8 +285,20 @@ There is no `VERDICT: REPAIR` and no separate DeepSeek repair handoff. The GPT v
 2. Start no dependents of the blocked phase while its latest validation verdict is BLOCKED.
 3. Continue disjoint active siblings; cancel only sibling work that newly discovered write overlap makes unsafe.
 4. Poll every launched or cancelled agent to terminal.
-5. If the blocker becomes resolvable within accepted authority, launch a fresh GPT-5.6 Sol validator, checkpoint its next numbered attempt, and repeat until the latest verdict is PASS or the blocker remains unresolved. Never erase or replace earlier BLOCKED attempts.
+5. If the blocker becomes resolvable within accepted authority, launch a fresh GPT-5.6 Terra max validator, checkpoint its next numbered attempt, and repeat until the latest verdict is PASS or the blocker remains unresolved. Never erase or replace earlier BLOCKED attempts.
 6. If the blocker remains unresolved, finish the record truthfully as blocked; never mark completed without durable latest phase and integration PASS evidence.
+
+### Senior escalation from validation
+
+When a phase validator has already made one full correction pass and the phase still does not pass, or when the validator identifies a complex issue that exceeds its ability to repair in a single editing pass, do not loop validators indefinitely. Instead:
+
+1. Collect the validator's concrete findings, the specific criteria still failing, and the repository state after its repair edits.
+2. Compose a targeted handoff for a senior agent (edit-authorized) that includes the phase contract, the validator's evidence, and the exact remaining defects.
+3. Launch one senior agent with `openai-codex/gpt-5.6-sol` at `xhigh` to resolve the complex issue.
+4. After the senior agent completes, launch a fresh GPT-5.6 Terra validator against the resulting state.
+5. If that validator returns PASS, checkpoint and proceed normally. If it returns BLOCKED again, report the concrete evidence and escalate to the user.
+
+This prevents validator loops on problems that need deeper architectural reasoning while keeping the validation gate intact.
 
 ## Checkpoint changed files and verdicts
 
@@ -298,11 +320,11 @@ No dependent phase starts before every dependency's latest checkpointed verdict 
 
 ### Malformed verdict retry
 
-A validator response with no recognizable `VERDICT: PASS` or `VERDICT: BLOCKED` is malformed. Retry once with a fresh, uniquely named GPT-5.6 Sol medium validator using the same exact editing tool set and authority. A malformed response never becomes PASS, BLOCKED evidence by itself, or a DeepSeek repair request. If the retry is malformed, checkpoint the protocol failure and stop without opening the dependency barrier.
+A validator response with no recognizable `VERDICT: PASS` or `VERDICT: BLOCKED` is malformed. Retry once with a fresh, uniquely named GPT-5.6 Terra max validator using the same exact editing tool set and authority. A malformed response never becomes PASS, BLOCKED evidence by itself, or a DeepSeek repair request. If the retry is malformed, checkpoint the protocol failure and stop without opening the dependency barrier.
 
 ## Final integration gate
 
-After every phase has a checkpointed `VERDICT: PASS`, launch one GPT-5.6 Sol `medium` integration review-and-repair agent with full edit authority:
+After every phase has a checkpointed `VERDICT: PASS`, launch one GPT-5.6 Terra `max` integration review-and-repair agent with full edit authority:
 
 ```json
 {
@@ -311,9 +333,9 @@ After every phase has a checkpointed `VERDICT: PASS`, launch one GPT-5.6 Sol `me
       "name": "integration-<unique>",
       "task": "<integration contract, all phase verdicts, concepts.md, and user directive>",
       "provider": "openai-codex",
-      "model": "gpt-5.5",
+      "model": "gpt-5.6-terra",
       "thinkingLevel": "high",
-      "tools": ["read", "grep", "find", "ls", "bash", "edit", "write"]
+      "tools": ["read", "bash", "edit", "write"]
     }
   ]
 }

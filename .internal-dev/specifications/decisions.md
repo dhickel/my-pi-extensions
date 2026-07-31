@@ -195,11 +195,11 @@ Record accepted decisions, justification, alternatives, caveats, affected specif
 - Source: phase-04 implementation and validation directive.
 - Review timing: if execution evidence needs to reference a plan version that postdates the original freeze.
 
-## 2026-07-19 — Subagent tool policy is exact and atomically validated
+## 2026-07-19 — Subagent tool policy is exact and atomically validated (tool-selection portions superseded 2026-07-21)
 
-- Decision: every subagent receives a complete exact array of case-sensitive tool API names. The spawn batch is validated atomically before any child initializes. Unknown, unavailable, duplicate, forbidden, root-only, or fingerprint-mismatched tools reject the entire batch with a concrete error.
-- Justification: additive or inherited tool policies let a model silently work around intended restrictions by reasoning about absent tool descriptions. Exact arrays plus atomic rejection make tool-gate failures visible and deterministic.
-- Alternative and tradeoff: inherit root tools by default with opt-out exclusions, or validate per-agent after children start. Rejected because exclusion lists drift across Pi versions and post-start validation leaks a head-start to already-started children.
+- Decision: every subagent receives one resolved exact array of case-sensitive tool API names. The spawn batch is validated atomically before any child initializes. Unknown, unregistered, duplicate, forbidden, root-only, or fingerprint-mismatched tools reject the entire batch with a concrete error.
+- Justification: additive or mutable inherited policies let a model silently work around intended restrictions by reasoning about absent tool descriptions. Exact resolved arrays plus atomic rejection make tool-gate failures visible and deterministic.
+- Superseded portions: callers no longer must always supply the array, default inheritance is no longer rejected, and registered definitions no longer fail merely because they are inactive in the caller. Omission now deterministically snapshots all registered child-allowed ordinary tools into the same exact validation path; see the 2026-07-21 default-all decision. Post-start validation remains rejected because it leaks a head start to already-started children.
 - Caveat: the model may still not use all granted tools; exact policy controls what is possible, not what the model chooses. Excluded tool definitions and prompt guidance never enter child context.
 - Affected specification: `sprint-planner-suite.md` and the subagents README.
 - Source: phase-05 implementation and validation directive.
@@ -254,3 +254,34 @@ Record accepted decisions, justification, alternatives, caveats, affected specif
 - Affected specification: `sprint-planner-suite.md`.
 - Source: phase-01 and phase-08 implementation and validation directives.
 - Review timing: if plan phases become independently versioned or the plan format gains optional metadata fields.
+
+## 2026-07-21 — Subagents permit one explicit, root-owned delegation layer
+
+- Decision: nested delegation is denied by default. A root spawn may set `allowSubagents: true` on a direct child, which atomically grants the fixed `subagent_spawn`, `subagent_poll`, `subagent_status`, and `subagent_cancel` bundle. That child may create depth-2 agents for any delegated task, but depth-2 agents cannot receive the bundle or spawn another layer. The existing eight-agent limit is shared across the complete tree, and every parent terminal path owns bounded cascading cancellation and disposal of its descendants.
+- Justification: implementation children sometimes need to delegate a focused supporting task or invoke the exact senior escalation workflow themselves, while default denial, one fixed control grant, bounded depth, shared capacity, and parent-owned cleanup prevent accidental recursive fan-out and orphaned local sessions.
+- Alternative and tradeoff: allow arbitrary recursion, list control tools manually in each exact `tools` array, or give every manager an independent capacity pool. Rejected because those designs permit uncontrolled descendant trees, partial lifecycle grants, and multiplicative concurrency. Keeping all nesting prohibited was safer but forced every supporting task and escalation request back through the root and prevented a child from owning difficult work through completion.
+- Caveat: bounded cleanup guarantees terminal local accounting, local session disposal, suppression of late results, and release of retained handles; it does not claim that a remote provider honored cancellation. Names remain lifetime-unique within each owning manager rather than globally across the tree.
+- Affected specification: the subagents README, global engineering policy, and senior-agent skill.
+- Source: user direction on 2026-07-21.
+- Review timing: if Pi exposes native hierarchical sessions, provider-level cancellation guarantees, or dynamically scoped tool capabilities.
+
+## 2026-07-21 — Omitted subagent tools safely mean no ordinary tools (superseded)
+
+- Decision (historical v0.3.1): `agents[].tools` is optional at the public spawn boundary. Omission normalizes to the same exact empty ordinary-tool set as `tools: []`; when a list is supplied, it remains a complete exact grant and receives the existing atomic availability, prohibition, and fingerprint validation. `allowSubagents` remains a separate fixed control-bundle grant.
+- Superseded: user direction later on 2026-07-21 changed omission to default-all child-allowed ordinary tools. See the decision below.
+- Justification: no-tool delegation is the least-privileged case and should not fail because a model saw stale, compacted, or incomplete schema guidance. A safe empty default removes an avoidable launch retry without granting any implicit capability.
+- Alternative and tradeoff: keep `tools` required and rely on the schema description or model retry. Rejected because observed model-visible schema disagreement made the required field undiscoverable while validation still enforced it.
+- Caveat: omission can leave a child unable to perform its task; callers must still list every ordinary tool the task requires. Malformed provided values and unavailable or forbidden names continue to reject the complete batch.
+- Affected specification: the subagents README and exact-tool-policy decision of 2026-07-19.
+- Source: user-reported schema/validation mismatch on 2026-07-21.
+- Review timing: if Pi gains schema-version negotiation or changes provider-facing tool-schema projection.
+
+## 2026-07-21 — Omitted subagent tools enable all registered child-allowed ordinary tools
+
+- Decision: omitting `agents[].tools` grants every registered ordinary tool allowed in child sessions, whether or not it is active in the caller. Providing an array remains a complete exact restriction: `[]` grants none, while a nonempty list grants only those names. Explicit allowlists may name registered inactive tools and thereby enable them for the child. Always-forbidden child tools and the managed subagent control bundle are excluded from default-all mode; `allowSubagents` remains the sole opt-in for that control bundle.
+- Justification: general-purpose delegated agents should be immediately capable by default, while callers that need least privilege can still supply an explicit allowlist. Caller activation is a root-context choice, not evidence that a registered tool is invalid for a child. The model-facing guidance distinguishes caller-inactive from unregistered names, and fixed skills use `bash` for search/listing rather than assuming separate `grep`, `find`, or `ls` APIs exist.
+- Alternative and tradeoff: default only to active caller tools or reject inactive names in explicit lists. Rejected after observed multi-retry friction because it makes child capability depend on an unrelated caller allowlist and conflicts with fixed skill tool contracts. Default-all broadens child capability, so sensitive workflows should use explicit allowlists.
+- Caveat: default-all still requires exact child reproduction of every selected definition. Unregistered tools, `ask_user_choices`, `ask_user_text`, and subagent controls are not granted by omission.
+- Affected specification: the subagents README and the exact-tool-policy decision of 2026-07-19.
+- Source: user direction on 2026-07-21.
+- Review timing: if the child forbidden-tool boundary, active-tool semantics, or dynamic capability model changes.

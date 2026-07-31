@@ -15,10 +15,10 @@ export const MODEL_ROUTES = {
 	brainstormSynthesis: { provider: "openai-codex", model: "gpt-5.6-sol", thinking: "high" },
 	brainstormRedTeam: { provider: "openai-codex", model: "gpt-5.6-sol", thinking: "high" },
 	ironoutAuthor: { provider: "openai-codex", model: "gpt-5.6-sol", thinking: "high" },
-	ironoutReviewer: { provider: "openai-codex", model: "gpt-5.6-sol", thinking: "medium" },
+	ironoutReviewer: { provider: "openai-codex", model: "gpt-5.6-terra", thinking: "high" },
 	advancedPlanner: { provider: "openai-codex", model: "gpt-5.6-sol", thinking: "high" },
 	advancedAdvisor: { provider: "openai-codex", model: "gpt-5.6-sol", thinking: "max" },
-	advancedReviewer: { provider: "openai-codex", model: "gpt-5.5", thinking: "high" },
+	advancedReviewer: { provider: "openai-codex", model: "gpt-5.6-terra", thinking: "high" },
 } as const satisfies Record<string, ModelTuple>;
 
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
@@ -121,6 +121,12 @@ export interface WorkerRequest {
 	maxQuestionRounds?: number;
 	maxSeniorCalls?: number;
 	seniorModel?: ModelTuple;
+	/** Allow this worker to spawn nested subagents via sprint_spawn_agent. Default off. */
+	allowNestedSpawn?: boolean;
+	/** Remaining nesting depth for recursive spawns. 0 means no nesting allowed. */
+	remainingNestDepth?: number;
+	/** Maximum number of nested spawn calls per worker. 0 means disabled. */
+	maxNestedCalls?: number;
 	retryPrompt?: string;
 }
 

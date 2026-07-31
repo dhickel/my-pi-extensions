@@ -1,6 +1,8 @@
 import crypto from "node:crypto";
 
 export const MAX_CONCURRENT_AGENTS = 8;
+/** Root children are depth 1; one opt-in delegation layer may create depth-2 children. */
+export const MAX_SUBAGENT_DEPTH = 2;
 export const MAX_ASSISTANT_TURNS = 300;
 export const MODEL_OUTPUT_MAX_BYTES = 50 * 1024;
 export const MODEL_OUTPUT_MAX_LINES = 2_000;
@@ -12,19 +14,29 @@ const CURSOR_VERSION = 1;
 const TERMINAL_STATES = new Set<SubagentState>(["completed", "failed", "cancelled", "turn_limit"]);
 export type TerminalState = Extract<SubagentState, "completed" | "failed" | "cancelled" | "turn_limit">;
 
-export const CHILD_EXCLUDED_TOOL_NAMES = [
+export const SUBAGENT_CONTROL_TOOL_NAMES = [
 	"subagent_spawn",
 	"subagent_poll",
 	"subagent_status",
 	"subagent_cancel",
-	"ask_user_choices",
-	"ask_user_text",
 ] as const;
 
-const CHILD_EXCLUDED_TOOLS = new Set<string>(CHILD_EXCLUDED_TOOL_NAMES);
+export const CHILD_ALWAYS_FORBIDDEN_TOOL_NAMES = ["ask_user_choices", "ask_user_text"] as const;
 
-export function isChildToolAllowed(name: string): boolean {
-	return !CHILD_EXCLUDED_TOOLS.has(name);
+/** Default-denied child tools. The control bundle is granted only through allowSubagents. */
+export const CHILD_EXCLUDED_TOOL_NAMES = [
+	...SUBAGENT_CONTROL_TOOL_NAMES,
+	...CHILD_ALWAYS_FORBIDDEN_TOOL_NAMES,
+] as const;
+
+export const SUBAGENT_CHILD_CONFIG_EVENT = "pi-subagents:configure-child-manager:v1";
+
+const SUBAGENT_CONTROL_TOOLS = new Set<string>(SUBAGENT_CONTROL_TOOL_NAMES);
+const CHILD_ALWAYS_FORBIDDEN_TOOLS = new Set<string>(CHILD_ALWAYS_FORBIDDEN_TOOL_NAMES);
+
+export function isChildToolAllowed(name: string, allowSubagents = false): boolean {
+	if (CHILD_ALWAYS_FORBIDDEN_TOOLS.has(name)) return false;
+	return allowSubagents || !SUBAGENT_CONTROL_TOOLS.has(name);
 }
 
 // ── Tool catalog & fingerprint helpers (pure, testable without Pi sessions) ──
@@ -262,7 +274,10 @@ export type SubagentState =
 export interface AgentSpec {
 	name: string;
 	task: string;
-	tools: string[];
+	/** Optional exact allowlist. Omission grants every registered child-allowed ordinary tool. */
+	tools?: string[];
+	/** Opt-in grant allowing this child to create and supervise one nested delegation layer. */
+	allowSubagents?: boolean;
 	provider?: string;
 	model?: string;
 	thinkingLevel?: ThinkingLevel | string;
@@ -332,6 +347,8 @@ export interface ResultPageResponse {
 export interface ValidationContext {
 	activeCount: number;
 	lifetimeNames: ReadonlySet<string>;
+	managerDepth: number;
+	maxSubagentDepth: number;
 	currentModel?: ModelDescriptor;
 	currentThinkingLevel: ThinkingLevel;
 	findModel(provider: string, model: string): ModelDescriptor | undefined;
@@ -347,6 +364,7 @@ export interface ResolvedAgentSpec {
 	model: string;
 	thinkingLevel: ThinkingLevel;
 	cwd: string;
+	allowSubagents: boolean;
 	expectedTools: readonly ToolFingerprint[];
 }
 
@@ -375,8 +393,13 @@ export interface ChildHandle {
 	dispose(): Promise<void> | void;
 }
 
+export interface SubagentManagerScope {
+	readonly coordinator: SubagentCoordinator;
+	readonly depth: number;
+}
+
 export interface SubagentAdapter {
-	initialize(spec: ResolvedAgentSpec): Promise<ChildHandle>;
+	initialize(spec: ResolvedAgentSpec, childScope: SubagentManagerScope, signal: AbortSignal): Promise<ChildHandle>;
 }
 
 export interface SubagentResult {
@@ -423,9 +446,64 @@ export interface CancelOptions {
 	all?: boolean;
 }
 
+/** Shared accounting for one root-owned subagent tree. */
+export class SubagentCoordinator {
+	readonly maxConcurrent: number;
+	readonly maxSubagentDepth: number;
+	readonly #activeIds = new Set<string>();
+	readonly #listeners = new Set<(activeCount: number) => void>();
+
+	constructor(maxConcurrent = MAX_CONCURRENT_AGENTS) {
+		if (!Number.isInteger(maxConcurrent) || maxConcurrent < 1 || maxConcurrent > MAX_CONCURRENT_AGENTS) {
+			throw new Error(`maxConcurrent must be an integer between 1 and ${MAX_CONCURRENT_AGENTS}.`);
+		}
+		this.maxConcurrent = maxConcurrent;
+		this.maxSubagentDepth = MAX_SUBAGENT_DEPTH;
+	}
+
+	get activeCount(): number {
+		return this.#activeIds.size;
+	}
+
+	reserve(ids: readonly string[]): void {
+		if (this.activeCount + ids.length > this.maxConcurrent) {
+			throw new Error(
+				`Spawning ${ids.length} agents would exceed the ${this.maxConcurrent}-agent tree concurrency limit (${this.activeCount} active).`,
+			);
+		}
+		const unique = new Set(ids);
+		if (unique.size !== ids.length || ids.some((id) => this.#activeIds.has(id))) {
+			throw new Error("Subagent coordinator received duplicate record identities.");
+		}
+		for (const id of ids) this.#activeIds.add(id);
+		this.#emit();
+	}
+
+	release(id: string): void {
+		if (!this.#activeIds.delete(id)) return;
+		this.#emit();
+	}
+
+	subscribe(listener: (activeCount: number) => void): () => void {
+		this.#listeners.add(listener);
+		return () => this.#listeners.delete(listener);
+	}
+
+	#emit(): void {
+		for (const listener of [...this.#listeners]) {
+			try {
+				listener(this.activeCount);
+			} catch {
+				// Accounting must not depend on a footer/status callback.
+			}
+		}
+	}
+}
+
 export interface SubagentManagerOptions {
 	adapter: SubagentAdapter;
 	maxConcurrent?: number;
+	scope?: SubagentManagerScope;
 	turnLimit?: number;
 	onChange?: (activeCount: number) => void;
 	now?: () => number;
@@ -455,6 +533,7 @@ interface InternalRecord {
 	cancelRequested: boolean;
 	turnLimitReached: boolean;
 	handle?: ChildHandle;
+	initializationController?: AbortController;
 	done: Promise<void>;
 	resolveDone: () => void;
 	detached: boolean;
@@ -479,6 +558,16 @@ function assertThinkingLevel(value: string): asserts value is ThinkingLevel {
 }
 
 export function validateSpawnBatch(specs: readonly AgentSpec[], context: ValidationContext): ResolvedAgentSpec[] {
+	if (
+		!Number.isInteger(context.managerDepth) ||
+		context.managerDepth < 0 ||
+		context.maxSubagentDepth !== MAX_SUBAGENT_DEPTH
+	) {
+		throw new Error("Invalid subagent hierarchy context.");
+	}
+	if (context.managerDepth >= context.maxSubagentDepth) {
+		throw new Error(`Subagents may nest only one layer (maximum agent depth ${context.maxSubagentDepth}).`);
+	}
 	if (!Array.isArray(specs) || specs.length === 0) {
 		throw new Error("agents must contain at least one subagent.");
 	}
@@ -504,18 +593,31 @@ export function validateSpawnBatch(specs: readonly AgentSpec[], context: Validat
 		const key = normalizedName(name);
 		if (batchNames.has(key)) throw new Error(`Duplicate subagent name in batch: "${name}" (names are case-insensitive).`);
 		if (context.lifetimeNames.has(key)) {
-			throw new Error(`Subagent name "${name}" has already been used in this root session.`);
+			throw new Error(`Subagent name "${name}" has already been used in this subagent scope.`);
 		}
 		batchNames.add(key);
 
-		// ── Tool policy validation (exact, per-agent, ordered) ──
-		if (!Array.isArray(spec.tools)) {
-			throw new Error(`agents[${index}].tools must be an array (received ${typeof spec.tools}).`);
+		if (spec.allowSubagents !== undefined && typeof spec.allowSubagents !== "boolean") {
+			throw new Error(`agents[${index}].allowSubagents must be a boolean.`);
 		}
+		const allowSubagents = spec.allowSubagents === true;
+		if (allowSubagents && context.managerDepth + 1 >= context.maxSubagentDepth) {
+			throw new Error(
+				`Agent "${name}" cannot receive subagent controls: only root children may spawn one nested delegation layer.`,
+			);
+		}
+
+		// ── Tool policy validation (exact, per-agent, ordered) ──
+		if (spec.tools !== undefined && !Array.isArray(spec.tools)) {
+			throw new Error(`agents[${index}].tools must be an array when provided (received ${typeof spec.tools}).`);
+		}
+		const requestedTools = spec.tools ?? [...context.catalog]
+			.filter(([name, entry]) => !entry.forbidden && !SUBAGENT_CONTROL_TOOLS.has(name))
+			.map(([name]) => name);
 		const toolSet = new Set<string>();
 		const expectedTools: ToolFingerprint[] = [];
-		for (let ti = 0; ti < spec.tools.length; ti++) {
-			const toolName = spec.tools[ti];
+		for (let ti = 0; ti < requestedTools.length; ti++) {
+			const toolName = requestedTools[ti];
 			if (typeof toolName !== "string") {
 				throw new Error(`agents[${index}].tools[${ti}] must be a string.`);
 			}
@@ -523,6 +625,11 @@ export function validateSpawnBatch(specs: readonly AgentSpec[], context: Validat
 				throw new Error(`Duplicate tool "${toolName}" in agents[${index}].tools.`);
 			}
 			toolSet.add(toolName);
+			if (SUBAGENT_CONTROL_TOOLS.has(toolName)) {
+				throw new Error(
+					`Tool "${toolName}" requested by agent "${name}" is forbidden in tools; use allowSubagents for the complete managed control bundle.`,
+				);
+			}
 
 			const entry = context.catalog.get(toolName);
 			if (!entry) {
@@ -531,10 +638,20 @@ export function validateSpawnBatch(specs: readonly AgentSpec[], context: Validat
 			if (entry.forbidden) {
 				throw new Error(`Tool "${toolName}" requested by agent "${name}" is forbidden.`);
 			}
-			if (!entry.active) {
-				throw new Error(`Tool "${toolName}" requested by agent "${name}" is not active.`);
-			}
 			expectedTools.push(entry.fingerprint);
+		}
+
+		if (allowSubagents) {
+			for (const toolName of SUBAGENT_CONTROL_TOOL_NAMES) {
+				const entry = context.catalog.get(toolName);
+				if (!entry) {
+					throw new Error(`Managed subagent tool "${toolName}" required by agent "${name}" is not registered.`);
+				}
+				if (entry.forbidden) {
+					throw new Error(`Managed subagent tool "${toolName}" required by agent "${name}" is forbidden.`);
+				}
+				expectedTools.push(entry.fingerprint);
+			}
 		}
 
 		const hasProvider = typeof spec.provider === "string" && spec.provider.trim().length > 0;
@@ -574,6 +691,7 @@ export function validateSpawnBatch(specs: readonly AgentSpec[], context: Validat
 			model: model.id,
 			thinkingLevel,
 			cwd: context.cwd,
+			allowSubagents,
 			expectedTools: Object.freeze(expectedTools.map((tool) => Object.freeze({ ...tool }))),
 		});
 	}
@@ -739,7 +857,6 @@ let nextId = 1;
 
 export class SubagentManager {
 	readonly #adapter: SubagentAdapter;
-	readonly #maxConcurrent: number;
 	readonly #turnLimit: number;
 	readonly #shutdownGraceMs: number;
 	readonly #boundScheduler: (milliseconds: number) => Promise<void>;
@@ -747,18 +864,27 @@ export class SubagentManager {
 	readonly #now: () => number;
 	readonly #cursorSecret: Buffer;
 	readonly #abortedHandles = new WeakSet<object>();
-	readonly #disposedHandles = new WeakSet<object>();
+	readonly #disposePromises = new WeakMap<object, Promise<void>>();
 	readonly #records = new Map<string, InternalRecord>();
 	readonly #lifetimeNames = new Set<string>();
 	readonly #waiters = new Set<() => void>();
+	#coordinator: SubagentCoordinator;
+	#depth: number;
+	#unsubscribeCoordinator?: () => void;
 	#blockingPoll = false;
 	#reminderOutstanding = false;
 	#shutdown = false;
+	#shutdownPromise?: Promise<void>;
 	#lastNotifiedActiveCount = 0;
 
 	constructor(options: SubagentManagerOptions) {
+		if (options.scope && options.maxConcurrent !== undefined) {
+			throw new Error("A shared subagent scope cannot be combined with an independent concurrency limit.");
+		}
 		this.#adapter = options.adapter;
-		this.#maxConcurrent = options.maxConcurrent ?? MAX_CONCURRENT_AGENTS;
+		this.#coordinator = options.scope?.coordinator ?? new SubagentCoordinator(options.maxConcurrent);
+		this.#depth = options.scope?.depth ?? 0;
+		this.#assertDepth(this.#depth, this.#coordinator);
 		this.#turnLimit = options.turnLimit ?? MAX_ASSISTANT_TURNS;
 		this.#shutdownGraceMs = options.shutdownGraceMs ?? DEFAULT_SHUTDOWN_GRACE_MS;
 		this.#boundScheduler = options.boundScheduler ?? ((milliseconds) => new Promise((resolve) => {
@@ -768,44 +894,91 @@ export class SubagentManager {
 		this.#onChange = options.onChange;
 		this.#now = options.now ?? Date.now;
 		this.#cursorSecret = crypto.randomBytes(32);
+		this.#subscribeCoordinator();
 	}
 
 	get activeCount(): number {
-		let count = 0;
-		for (const record of this.#records.values()) {
-			if (record.status === "starting" || record.status === "running") count++;
-		}
-		return count;
+		return this.#coordinator.activeCount;
+	}
+
+	get depth(): number {
+		return this.#depth;
 	}
 
 	get lifetimeNames(): ReadonlySet<string> {
 		return this.#lifetimeNames;
 	}
 
-	async spawn(specs: readonly AgentSpec[], context: Omit<ValidationContext, "activeCount" | "lifetimeNames">): Promise<SubagentResult[]> {
+	createChildScope(): SubagentManagerScope {
+		return Object.freeze({ coordinator: this.#coordinator, depth: this.#depth + 1 });
+	}
+
+	attachScope(scope: SubagentManagerScope): void {
+		if (this.#shutdown || this.#records.size > 0 || this.#lifetimeNames.size > 0) {
+			throw new Error("A subagent manager scope can be attached only before the manager is used.");
+		}
+		this.#assertDepth(scope.depth, scope.coordinator);
+		this.#unsubscribeCoordinator?.();
+		this.#coordinator = scope.coordinator;
+		this.#depth = scope.depth;
+		this.#lastNotifiedActiveCount = -1;
+		this.#subscribeCoordinator();
+		this.#notifyActiveCount(this.activeCount);
+	}
+
+	async spawn(
+		specs: readonly AgentSpec[],
+		context: Omit<ValidationContext, "activeCount" | "lifetimeNames" | "managerDepth" | "maxSubagentDepth">,
+	): Promise<SubagentResult[]> {
 		if (this.#shutdown) throw new Error("The subagent manager is shutting down.");
 		const resolved = validateSpawnBatch(specs, {
 			...context,
 			activeCount: this.activeCount,
 			lifetimeNames: this.#lifetimeNames,
+			managerDepth: this.#depth,
+			maxSubagentDepth: this.#coordinator.maxSubagentDepth,
 		});
-		if (this.activeCount + resolved.length > this.#maxConcurrent) {
-			throw new Error(`Spawning this batch would exceed the ${this.#maxConcurrent}-agent concurrency limit.`);
-		}
 
 		const records = resolved.map((spec) => this.#createRecord(spec));
-		for (const record of records) {
-			this.#records.set(record.key, record);
-			this.#lifetimeNames.add(record.key);
+		this.#coordinator.reserve(records.map((record) => record.id));
+		try {
+			for (const record of records) {
+				this.#records.set(record.key, record);
+				this.#lifetimeNames.add(record.key);
+			}
+		} catch (error) {
+			for (const record of records) this.#coordinator.release(record.id);
+			throw error;
 		}
 		this.#changed();
 
+		const childScope = this.createChildScope();
 		let initializationAbandoned = false;
+		let firstInitializationError: string | undefined;
+		let signalInitializationFailure = () => undefined;
+		const initializationFailure = new Promise<void>((resolve) => {
+			signalInitializationFailure = resolve;
+		});
 		const initializedHandles: Array<ChildHandle | undefined> = Array(records.length);
+		const abortInitializers = (reason: string) => {
+			for (const record of records) {
+				if (!record.initializationController?.signal.aborted) {
+					record.initializationController?.abort(new Error(reason));
+				}
+			}
+		};
+		const abandonForFailure = (reason: unknown) => {
+			if (firstInitializationError !== undefined) return;
+			firstInitializationError = errorText(reason);
+			initializationAbandoned = true;
+			abortInitializers(`Batch initialization failed: ${firstInitializationError}`);
+			signalInitializationFailure();
+		};
 		const initialization = Promise.all(
 			resolved.map(async (spec, index) => {
 				try {
-					const handle = await this.#adapter.initialize(spec);
+					const signal = records[index].initializationController!.signal;
+					const handle = await this.#adapter.initialize(spec, childScope, signal);
 					if (initializationAbandoned || isTerminalState(records[index].status)) {
 						void this.#boundedDispose(handle, this.#shutdownGraceMs);
 					} else {
@@ -813,6 +986,12 @@ export class SubagentManager {
 					}
 					return { status: "fulfilled" as const, value: handle };
 				} catch (reason) {
+					if (
+						!records[index].initializationController?.signal.aborted &&
+						!isTerminalState(records[index].status)
+					) {
+						abandonForFailure(reason);
+					}
 					return { status: "rejected" as const, reason };
 				}
 			}),
@@ -820,10 +999,22 @@ export class SubagentManager {
 		const outcome = await Promise.race([
 			initialization.then((results) => ({ kind: "initialized" as const, results })),
 			Promise.race(records.map((record) => record.done)).then(() => ({ kind: "interrupted" as const })),
+			initializationFailure.then(() => ({ kind: "failed" as const })),
 		]);
+
+		if (outcome.kind === "failed") {
+			await Promise.allSettled(
+				initializedHandles.filter((handle): handle is ChildHandle => handle !== undefined)
+					.map((handle) => this.#boundedDispose(handle, this.#shutdownGraceMs)),
+			);
+			const message = `Batch initialization failed before any task started: ${firstInitializationError}`;
+			for (const record of records) this.#terminalize(record, "failed", { error: message });
+			return records.map((record) => this.#snapshot(record, true));
+		}
 
 		if (outcome.kind === "interrupted" || records.some((record) => isTerminalState(record.status))) {
 			initializationAbandoned = true;
+			abortInitializers("Batch initialization was interrupted before any task started.");
 			await Promise.allSettled(
 				initializedHandles.filter((handle): handle is ChildHandle => handle !== undefined)
 					.map((handle) => this.#boundedDispose(handle, this.#shutdownGraceMs)),
@@ -864,6 +1055,7 @@ export class SubagentManager {
 		}
 		if (initializationError) {
 			initializationAbandoned = true;
+			abortInitializers(`Batch initialization failed: ${initializationError}`);
 			await Promise.allSettled(
 				initializedHandles.filter((handle): handle is ChildHandle => handle !== undefined)
 					.map((handle) => this.#boundedDispose(handle, this.#shutdownGraceMs)),
@@ -877,6 +1069,7 @@ export class SubagentManager {
 			const record = records[index];
 			const handle = initializedHandles[index]!;
 			record.handle = handle;
+			record.initializationController = undefined;
 			record.provider = handle.provider;
 			record.model = handle.model;
 			record.thinkingLevel = handle.thinkingLevel;
@@ -956,15 +1149,23 @@ export class SubagentManager {
 		return selected.map((record) => this.#snapshot(record, true));
 	}
 
-	async shutdown(reason = "Root session shutdown"): Promise<void> {
-		if (this.#shutdown) return;
+	shutdown(reason = "Root session shutdown"): Promise<void> {
+		if (this.#shutdownPromise) return this.#shutdownPromise;
 		this.#shutdown = true;
-		const active = [...this.#records.values()].filter(
-			(record) => record.status === "starting" || record.status === "running",
-		);
-		for (const record of this.#records.values()) record.delivered = true;
-		this.#reminderOutstanding = false;
-		await Promise.all(active.map((record) => this.#stopRecord(record, "cancelled", reason)));
+		this.#shutdownPromise = (async () => {
+			try {
+				const active = [...this.#records.values()].filter(
+					(record) => record.status === "starting" || record.status === "running",
+				);
+				for (const record of this.#records.values()) record.delivered = true;
+				this.#reminderOutstanding = false;
+				await Promise.all(active.map((record) => this.#stopRecord(record, "cancelled", reason)));
+			} finally {
+				this.#unsubscribeCoordinator?.();
+				this.#unsubscribeCoordinator = undefined;
+			}
+		})();
+		return this.#shutdownPromise;
 	}
 
 	claimReminder(): boolean {
@@ -997,6 +1198,7 @@ export class SubagentManager {
 			delivered: false,
 			cancelRequested: false,
 			turnLimitReached: false,
+			initializationController: new AbortController(),
 			done,
 			resolveDone,
 			detached: false,
@@ -1053,8 +1255,21 @@ export class SubagentManager {
 				finalFields = { error: errorText(error) };
 			}
 		} finally {
-			if (this.#isCurrent(record, generation)) this.#terminalize(record, finalStatus, finalFields, generation);
+			// Child disposal cascades into its nested manager. Do not publish an ordinary
+			// terminal result until that owned subtree has settled or hit its bound.
 			await this.#boundedDispose(handle, this.#shutdownGraceMs);
+			if (this.#isCurrent(record, generation)) {
+				// Cancellation or turn-limit state can change while cascading disposal waits.
+				if (record.turnLimitReached) {
+					finalStatus = "turn_limit";
+					finalFields.error = `Assistant turn limit reached (${this.#turnLimit}).`;
+				} else if (record.cancelRequested || this.#shutdown) {
+					finalStatus = "cancelled";
+					finalFields.error = record.error ?? "Cancelled.";
+				}
+				this.#terminalize(record, finalStatus, finalFields, generation);
+			}
+			if (record.handle === handle) record.handle = undefined;
 		}
 	}
 
@@ -1073,6 +1288,7 @@ export class SubagentManager {
 		record.detached = true;
 		record.generation++;
 		record.status = status;
+		record.initializationController = undefined;
 		record.endedAt = this.#now();
 		if (fields.finalText !== undefined) record.finalText = fields.finalText;
 		if (fields.usage !== undefined) record.usage = { ...fields.usage };
@@ -1101,6 +1317,7 @@ export class SubagentManager {
 		// The snapshot buffer is the sole retained canonical terminal payload.
 		record.finalText = undefined;
 
+		this.#coordinator.release(record.id);
 		record.resolveDone();
 		this.#changed();
 		return true;
@@ -1269,21 +1486,24 @@ export class SubagentManager {
 		if (cause === "cancelled") record.cancelRequested = true;
 		record.error = error;
 
-		// A starting record has no provider handle to wait for. Its observed
-		// initialization promise will dispose any handle that arrives late.
-		if (!record.handle) {
+		// Abort starting initialization cooperatively. The observed initialization
+		// promise disposes any handle that still arrives after terminalization.
+		const handle = record.handle;
+		if (!handle) {
+			record.initializationController?.abort(new Error(error));
 			this.#terminalize(record, cause, { error }, expectedGeneration);
 			return;
 		}
 
-		this.#requestAbort(record.handle);
+		this.#requestAbort(handle);
 		await Promise.race([record.done, this.#boundScheduler(this.#shutdownGraceMs)]);
 		if (this.#isCurrent(record, expectedGeneration)) {
 			this.#terminalize(record, cause, {
 				error: `${error} Root accounting ended after the child failed to cooperate; provider execution may not have stopped.`,
 			}, expectedGeneration);
 		}
-		await this.#boundedDispose(record.handle, this.#shutdownGraceMs);
+		await this.#boundedDispose(handle, this.#shutdownGraceMs);
+		if (record.handle === handle) record.handle = undefined;
 	}
 
 	#requestAbort(handle: ChildHandle): void {
@@ -1296,15 +1516,26 @@ export class SubagentManager {
 		}
 	}
 
-	async #boundedDispose(handle: ChildHandle, graceMs: number): Promise<void> {
-		if (this.#disposedHandles.has(handle)) return;
-		this.#disposedHandles.add(handle);
-		try {
-			const disposal = Promise.resolve(handle.dispose()).catch(() => undefined);
-			await Promise.race([disposal, this.#boundScheduler(graceMs)]);
-		} catch {
-			// Synchronous throw in dispose is observed and cannot block root accounting.
-		}
+	#boundedDispose(handle: ChildHandle, graceMs: number): Promise<void> {
+		const existing = this.#disposePromises.get(handle);
+		if (existing) return existing;
+
+		let settle = () => undefined;
+		const bounded = new Promise<void>((resolve) => {
+			settle = resolve;
+		});
+		this.#disposePromises.set(handle, bounded);
+		void (async () => {
+			try {
+				const disposal = Promise.resolve(handle.dispose()).catch(() => undefined);
+				await Promise.race([disposal, this.#boundScheduler(graceMs)]);
+			} catch {
+				// Synchronous throw in dispose is observed and cannot block root accounting.
+			} finally {
+				settle();
+			}
+		})();
+		return bounded;
 	}
 
 	// ── Cursor helpers (tested indirectly via #resultPage) ─────
@@ -1317,12 +1548,26 @@ export class SubagentManager {
 		return decodeCursor(cursor, this.#cursorSecret);
 	}
 
-	#changed(): void {
-		const activeCount = this.activeCount;
-		if (activeCount !== this.#lastNotifiedActiveCount) {
-			this.#lastNotifiedActiveCount = activeCount;
-			this.#onChange?.(activeCount);
+	#assertDepth(depth: number, coordinator: SubagentCoordinator): void {
+		if (!Number.isInteger(depth) || depth < 0 || depth > coordinator.maxSubagentDepth) {
+			throw new Error(`Subagent manager depth must be between 0 and ${coordinator.maxSubagentDepth}.`);
 		}
+	}
+
+	#subscribeCoordinator(): void {
+		this.#unsubscribeCoordinator = this.#coordinator.subscribe((activeCount) => {
+			this.#notifyActiveCount(activeCount);
+		});
+	}
+
+	#notifyActiveCount(activeCount: number): void {
+		if (activeCount === this.#lastNotifiedActiveCount) return;
+		this.#lastNotifiedActiveCount = activeCount;
+		this.#onChange?.(activeCount);
+	}
+
+	#changed(): void {
+		this.#notifyActiveCount(this.activeCount);
 		for (const waiter of [...this.#waiters]) waiter();
 	}
 

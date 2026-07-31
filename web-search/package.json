@@ -1,6 +1,6 @@
 {
-  "name": "pi-subagents-extension",
-  "version": "0.5.0",
+  "name": "pi-web-search-extension",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "keywords": ["pi-package"],
@@ -8,7 +8,6 @@
     "test": "node --experimental-strip-types --test test/*.test.ts"
   },
   "peerDependencies": {
-    "@earendil-works/pi-ai": "*",
     "@earendil-works/pi-coding-agent": "*",
     "@earendil-works/pi-tui": "*",
     "typebox": "*"
@@ -17,4 +16,3 @@
     "extensions": ["./index.ts"]
   }
 }
-
