@@ -223,8 +223,8 @@ export function validateRoles(content: string | undefined, expectedCount: number
 }
 
 export function parseScopeSize(content: string): ScopeSize {
-	const markers = meaningfulSectionLines(content, "Scope Size").filter((line) => /^\*\*Size\*\*: (?:small|medium|large)$/.test(line));
-	if (markers.length === 0) throw new Error("Orchestration Scope Size section must declare one literal `**Size**: small`, `**Size**: medium`, or `**Size**: large` marker on its own line outside Markdown code.");
+	const markers = meaningfulSectionLines(content, "Scope Size").filter((line) => /^\*\*Size\*\*: (?:small|medium|large|extra-large)$/.test(line));
+	if (markers.length === 0) throw new Error("Orchestration Scope Size section must declare one literal `**Size**: small`, `**Size**: medium`, `**Size**: large`, or `**Size**: extra-large` marker on its own line outside Markdown code.");
 	if (markers.length > 1) throw new Error("Orchestration Scope Size section must contain exactly one size marker; found duplicates.");
 	return markers[0].slice("**Size**: ".length) as ScopeSize;
 }
@@ -483,7 +483,7 @@ export function inspectPlan(files: readonly { path: string; content: string }[])
 	const phaseCount = phases.length;
 	(r.metadata as PlanValidationMetadata).phaseCount = phaseCount;
 	(r.metadata as PlanValidationMetadata).phasePaths = phases;
-	if (phaseCount < 2 || phaseCount > 10) push(r, finding("shape-phase-count-global", "shape", `Advanced plan requires 2–10 contiguous phase files; found ${phaseCount}.`));
+	if (phaseCount < 2 || phaseCount > 20) push(r, finding("shape-phase-count-global", "shape", `Advanced plan requires 2–20 contiguous phase files; found ${phaseCount}.`));
 	for (let index = 0; index < phases.length; index++) {
 		if (Number(phases[index].slice(6, 8)) !== index + 1) {
 			push(r, finding("shape-phase-contiguous", "shape", "Advanced plan phase numbers must be contiguous from 01."));
@@ -558,7 +558,7 @@ export function inspectPlan(files: readonly { path: string; content: string }[])
 		if (!exactLines(orch.content, "Model Assignments", [
 			"- Implementation: deepseek/deepseek-v4-pro:max",
 			"- Validation: openai-codex/gpt-5.6-terra:high",
-			"- Implementers: exactly one implementation agent per phase",
+			"- Implementers: exactly one implementation agent per unsplit phase, or one sequential agent per lettered subphase for split phases",
 		])) {
 			push(r, finding("orch-model-assignments", "model-route", "Orchestration Model Assignments section must use the exact structured contract.", "orchestration.md"));
 		}
@@ -601,7 +601,7 @@ export function validateDraftPlanShape(files: readonly { path: string; content: 
 	const phases = names.filter((n) => PHASE_PATH_PATTERN.test(n)).sort();
 	const unexpected = names.filter((n) => n !== "concepts.md" && n !== "orchestration.md" && !PHASE_PATH_PATTERN.test(n));
 	if (unexpected.length > 0) throw new Error(`Draft plan contains unexpected entries: ${unexpected.join(", ")}.`);
-	if (phases.length < 2 || phases.length > 10) throw new Error(`Draft plan requires 2–10 phase files; found ${phases.length}.`);
+	if (phases.length < 2 || phases.length > 20) throw new Error(`Draft plan requires 2–20 phase files; found ${phases.length}.`);
 	for (let i = 0; i < phases.length; i++) {
 		if (Number(phases[i].slice(6, 8)) !== i + 1) throw new Error("Draft plan phase numbers must be contiguous from 01.");
 	}

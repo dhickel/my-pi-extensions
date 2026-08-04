@@ -2,6 +2,12 @@
 
 This file documents the engine-owned model tuples used across the sprint planner workflow. These are defined in `types.ts` under `MODEL_ROUTES` and in the orchestrate skill at `skills/orchestrate/SKILL.md`.
 
+## Default delegation policy
+
+- Default implementation subagents must use `deepseek/deepseek-v4-pro` with `max` thinking unless the user explicitly requests another implementation model or a workflow-specific route below specifies otherwise.
+- Do not rely on inherited caller model/provider/thinking for implementation subagents. Every implementation delegation must explicitly set `provider`, `model`, and `thinkingLevel`; omitting them is a policy violation even when the current root agent happens to be DeepSeek.
+- Use the senior agent only when the user requests it directly, or as an escalation after ordinary implementation/debugging attempts have failed or produced a concrete blocker that needs senior diagnosis. Do not use the senior agent for routine first-pass implementation or ordinary parallelization. When invoked, senior agents should be launched with `allowSubagents: true` so they can delegate one bounded nested support layer when useful.
+
 ## Brainstorm
 
 | Step | Provider | Model | Thinking |

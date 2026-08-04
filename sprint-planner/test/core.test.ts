@@ -113,7 +113,7 @@ function phaseMd(num: number, deps: string, goal: string, targets: string): stri
 const phase1 = phaseMd(1, "none", "Complete phase 1", "sprint-planner/target-01.ts");
 const phase2 = phaseMd(2, "phase-01-first.md", "Complete phase 2", "sprint-planner/target-02.ts");
 
-function orchestrationFor(size: "small" | "medium" | "large", phasePaths: readonly string[]): string {
+function orchestrationFor(size: "small" | "medium" | "large" | "extra-large", phasePaths: readonly string[]): string {
 	return [
 		"# Orchestration",
 		"",
@@ -133,7 +133,7 @@ function orchestrationFor(size: "small" | "medium" | "large", phasePaths: readon
 		"",
 		"- Implementation: deepseek/deepseek-v4-pro:max",
 		"- Validation: openai-codex/gpt-5.6-terra:high",
-		"- Implementers: exactly one implementation agent per phase",
+		"- Implementers: exactly one implementation agent per unsplit phase, or one sequential agent per lettered subphase for split phases",
 		"",
 		"## Validation Gate",
 		"",
@@ -329,10 +329,10 @@ test("fake-runner sprint stops after corrected plan publication and cleans runti
 	const conceptReview = runner.requests.find((request) => request.role === "advanced concepts reviewer")!;
 	const orchestrationReview = runner.requests.find((request) => request.role === "advanced orchestration reviewer")!;
 	const phaseReviews = runner.requests.filter((request) => request.role.startsWith("advanced phase reviewer:"));
-	assert.equal(conceptReview.model.thinking, "max");
-	assert.equal(orchestrationReview.model.thinking, "max");
+	assert.equal(conceptReview.model.thinking, "high");
+	assert.equal(orchestrationReview.model.thinking, "high");
 	assert.equal(phaseReviews.length, 2);
-	assert.equal(phaseReviews.every((request) => request.model.thinking === "max" && request.contextPaths.length === 3), true);
+	assert.equal(phaseReviews.every((request) => request.model.thinking === "high" && request.contextPaths.length === 3), true);
 	assert.equal(runner.requests.some((request) => request.role.includes("advanced-plan reviewer")), false);
 	assert.match(await readFile(path.join(run, "reviews", "advanced-plan-review.md"), "utf8"), /phase-01-first/);
 	for (let index = 1; index <= 4; index++) {
@@ -654,7 +654,7 @@ function assertOrchestrateSkillContract(content: string): void {
 	must("Poll every agent", /Verify the final digest matches the complete-result digest/i, "digest verification");
 	must("Poll every agent", /Verify the reconstructed byte count matches the complete-result byte count/i, "byte count verification");
 
-	must("Validate every phase with review-and-repair", /after every lettered subphase of a split phase has completed.*one GPT-5\.6 Terra `max` review-and-repair agent for the parent phase with full edit authority/is, "editing GPT validates after all subphases");
+	must("Validate every phase with review-and-repair", /after every lettered subphase of a split phase has completed.*one GPT-5\.6 Terra `high` review-and-repair agent for the parent phase with full edit authority/is, "editing GPT validates after all subphases");
 	must("Validate every phase with review-and-repair", /Never launch independent validation between a phase's lettered subphases/i, "no intermediate subphase validation");
 	must("Validate every phase with review-and-repair", /Validators may not start until all implementation agents in that wave have stopped/i, "full implementation-wave barrier");
 	must("Validate every phase with review-and-repair", /Inspect the actual repository state independently/i, "independent state inspection");
@@ -672,7 +672,7 @@ function assertOrchestrateSkillContract(content: string): void {
 	must("PASS-before-dependent barriers", /phase remains `BLOCKED`, start no later dependency wave/i, "BLOCKED prevents downstream");
 
 	// Malformed verdict retry
-	must("PASS-before-dependent barriers", /Retry once with a fresh, uniquely named GPT-5\.6 Terra max validator using the same exact editing tool set and authority/i, "malformed retry boundary");
+	must("PASS-before-dependent barriers", /Retry once with a fresh, uniquely named GPT-5\.6 Terra high validator using the same exact editing tool set and authority/i, "malformed retry boundary");
 	must("PASS-before-dependent barriers", /malformed response never becomes PASS, BLOCKED evidence by itself, or a DeepSeek repair request/i, "malformed never becomes verdict");
 
 	// Checkpoint changed files and verdicts
@@ -683,7 +683,7 @@ function assertOrchestrateSkillContract(content: string): void {
 	must("Checkpoint changed files and verdicts", /Before marking any PASS or opening a dependent barrier, checkpoint through `sprint_execution_record`/i, "checkpoint before PASS barrier");
 	must("Checkpoint changed files and verdicts", /Pass the latest returned revision to every checkpoint call/i, "revision on every checkpoint");
 
-	must("Final integration gate", /After every phase has a checkpointed `VERDICT: PASS`, launch one GPT-5\.6 Terra `max` integration review-and-repair agent with full edit authority/i, "editing integration gate after all PASS");
+	must("Final integration gate", /After every phase has a checkpointed `VERDICT: PASS`, launch one GPT-5\.6 Terra `high` integration review-and-repair agent with full edit authority/i, "editing integration gate after all PASS");
 	must("Final integration gate", /inspect cross-phase behavior.*run applicable broader checks.*edit any remaining integration defect itself/is, "integration repair and criteria");
 	must("Final integration gate", /After the integration validator terminates, observe repository changes again/i, "observe integration repairs");
 	must("Final integration gate", /After integration PASS, checkpoint the integration verdict, observed changed-file set, and evidence through `sprint_execution_record`/i, "checkpoint integration");
@@ -858,6 +858,7 @@ test("parseScopeSize extracts small, medium, or large from orchestration content
 	assert.equal(parseScopeSize(orch("small")), "small");
 	assert.equal(parseScopeSize(orch("medium")), "medium");
 	assert.equal(parseScopeSize(orch("large")), "large");
+	assert.equal(parseScopeSize(orch("extra-large")), "extra-large");
 	assert.throws(() => parseScopeSize(orch("huge")), /must declare/);
 	assert.throws(() => parseScopeSize("## Scope Size\n\nNo marker here\n"), /must declare/);
 });
@@ -871,7 +872,7 @@ test("validatePlanFiles enforces scope-size phase budgets at boundaries", () => 
 		return [{ path: "concepts.md", content: concepts }, { path: "orchestration.md", content: orchestrationFor(size, phases.map((phase) => phase.path)) }, ...phases];
 	};
 
-	// Small: 2–3 phases — out of bounds (count=1 hits the global 2–10 check first)
+	// Small: 2–3 phases — out of bounds (count=1 hits the global 2–20 check first)
 	validatePlanFiles(fileSet("small", 2));
 	validatePlanFiles(fileSet("small", 3));
 	assert.throws(() => validatePlanFiles(fileSet("small", 1)), /contiguous phase files/);
@@ -887,7 +888,13 @@ test("validatePlanFiles enforces scope-size phase budgets at boundaries", () => 
 	validatePlanFiles(fileSet("large", 6));
 	validatePlanFiles(fileSet("large", 10));
 	assert.throws(() => validatePlanFiles(fileSet("large", 5)), /requires 6/);
-	assert.throws(() => validatePlanFiles(fileSet("large", 11)), /contiguous phase files/);
+	assert.throws(() => validatePlanFiles(fileSet("large", 11)), /requires 6/);
+
+	// Extra-large: 11–20 phases — valid boundaries
+	validatePlanFiles(fileSet("extra-large", 11));
+	validatePlanFiles(fileSet("extra-large", 20));
+	assert.throws(() => validatePlanFiles(fileSet("extra-large", 10)), /requires 11/);
+	assert.throws(() => validatePlanFiles(fileSet("extra-large", 21)), /contiguous phase files/);
 
 	// Missing orchestration heading
 	const badOrch = orchestrationSmall.replace("## Scope Size", "## Budget");
@@ -971,7 +978,7 @@ test("standalone advance plan performs orchestration corrective review", async (
 	const planDir = await new SprintPlannerEngine(runner).runStandaloneAdvancePlan({ projectRoot: root, internalDevPath: internal, id: "standalone-orch", directive: "Standalone plan" });
 	assert.deepEqual((await readdir(planDir)).sort(), ["concepts.md", "orchestration.md", "phase-01-first.md", "phase-02-second.md"]);
 	const orchReview = runner.requests.find((request) => request.role === "advanced orchestration reviewer")!;
-	assert.equal(orchReview.model.thinking, "max");
+	assert.equal(orchReview.model.thinking, "high");
 	const summary = await readFile(path.join(internal, "reviews", "standalone-orch-advanced-plan-review.md"), "utf8");
 	assert.match(summary, /orchestration\.md/);
 });
@@ -1002,11 +1009,17 @@ test("plan and handoff prompts provide instruction-only time-estimate guidance",
 		advancedOrchestrationReviewPrompt,
 		advancedPhaseReviewPrompt,
 		advancedPlanPrompt,
+		brainstormPrompt,
+		crossReviewPrompt,
 		ironoutPrompt,
 		ironoutReviewPrompt,
+		redTeamPrompt,
+		synthesisPrompt,
 	} = await import("../prompts.ts");
 	const planPrompt = advancedPlanPrompt("Test handoff");
-	assert.match(planPrompt, /4–12 files/);
+	assert.match(planPrompt, /4–22 files/);
+	assert.match(planPrompt, /Extra-large: 11–20 phases/);
+	assert.match(planPrompt, /likely to exceed one implementation agent's context/);
 	assert.match(planPrompt, /Scope Size/);
 	assert.match(planPrompt, /Phase Ledger/);
 	assert.match(planPrompt, /Execution Waves/);
@@ -1021,20 +1034,27 @@ test("plan and handoff prompts provide instruction-only time-estimate guidance",
 	assert.match(planPrompt, /lettered subphases \(A, B, C/i);
 	assert.match(planPrompt, /validation happens only after every lettered subphase is complete/i);
 	assert.match(planPrompt, /do not perform or print a formal token estimate/i);
+	assert.match(planPrompt, /full requested user scope/i);
+	assert.match(planPrompt, /mocks, stubs, placeholders, deferred work, partial implementations/i);
+	assert.match(planPrompt, /production-quality behavior/i);
 
 	const decompositionReview = advancedDecompositionReviewPrompt("Handoff", []);
 	assert.match(decompositionReview, /one agent session.*200,000–300,000 tokens/i);
 	assert.match(decompositionReview, /lettered subphases A, B, C/i);
 	assert.match(decompositionReview, /validation happens only after all of its subphases complete/i);
+	assert.match(decompositionReview, /complete requested user scope/i);
+	assert.match(decompositionReview, /mocks, stubs, placeholders, deferred work, partial implementations/i);
 
 	const orchReview = advancedOrchestrationReviewPrompt("Handoff", { path: "concepts.md", content: "x" }, { path: "orchestration.md", content: "x" }, ["phase-01-a.md"]);
 	assert.match(orchReview, /may not add, remove, split, or merge phases/);
 	assert.match(orchReview, /deepseek\/deepseek-v4-pro:max/);
-	assert.match(orchReview, /one implementer per phase/);
+	assert.match(orchReview, /one implementer per unsplit phase/);
 	assert.match(orchReview, /PASS gate/);
 	assert.match(orchReview, /one agent session.*200,000–300,000 tokens/i);
 	assert.match(orchReview, /lettered subphases A, B, C/i);
 	assert.match(orchReview, /phase validation only after every subphase completes/i);
+	assert.match(orchReview, /full production scope/i);
+	assert.match(orchReview, /acceptance endpoints/i);
 
 	const conceptReview = advancedConceptReviewPrompt("Handoff", { path: "concepts.md", content: "x" }, ["phase-01-a.md"]);
 	const phaseReview = advancedPhaseReviewPrompt({ path: "concepts.md", content: "x" }, { path: "orchestration.md", content: "x" }, { path: "phase-01-a.md", content: "x" }, ["phase-01-a.md"]);
@@ -1047,8 +1067,20 @@ test("plan and handoff prompts provide instruction-only time-estimate guidance",
 	assert.match(phaseReview, /detailed head-down implementation guidance without context bloat/);
 	assert.match(phaseReview, /one agent session.*200,000–300,000 tokens/i);
 	assert.match(phaseReview, /lettered subphases A, B, C/i);
-	assert.match(phaseReview, /all subphases to complete before the phase-level validation/i);
+	assert.match(phaseReview, /all subphases to complete in order before the phase-level validation/i);
 	assert.match(phaseReview, /orchestration\.md/);
+	assert.match(phaseReview, /full production scope/i);
+	assert.match(phaseReview, /acceptable exit criteria/i);
+	assert.match(conceptReview, /full production scope/i);
+
+	const brainstorm = brainstormPrompt("Prompt", { id: "feature-complete", name: "Feature completeness", lens: "Completeness" });
+	const crossReview = crossReviewPrompt({ id: "feature-complete", name: "Feature completeness", lens: "Completeness" }, [{ path: "other.md", content: "## Prompt\n\nx" }]);
+	const synthesis = synthesisPrompt("Prompt", [{ path: "a.md", content: "## Prompt\n\nx" }]);
+	const redTeam = redTeamPrompt("Synthesis");
+	for (const prompt of [brainstorm, crossReview, synthesis, redTeam]) {
+		assert.match(prompt, /feature completeness|feature-complete|production quality|production-quality/i);
+		assert.match(prompt, /mocks, stubs, placeholders, deferred work, partial implementations/i);
+	}
 
 	const guidedPrompts = [
 		ironoutPrompt("Input", [], false),
@@ -1061,6 +1093,7 @@ test("plan and handoff prompts provide instruction-only time-estimate guidance",
 	for (const prompt of guidedPrompts) {
 		assert.match(prompt, /Do not include time estimates, duration, effort, ETA, or calendar scheduling language\./);
 		assert.match(prompt, /Plans and handoffs describe what to do, not how long it takes\./);
+		assert.match(prompt, /mocks, stubs, placeholders, deferred work, partial implementations/i);
 	}
 });
 
@@ -1362,7 +1395,7 @@ test("orchestration semantics enforce complete ledgers, dependencies, waves, tup
 	assert.throws(() => validateOrchestration(orchestrationSmall.replace("depends: phase-01-first.md", "depends: phase-99-missing.md"), phases), /not a plan phase/);
 	assert.throws(() => validateOrchestration(orchestrationSmall.replace("- wave-01: phase-01-first.md\n- wave-02: phase-02-second.md", "- wave-01: phase-02-second.md\n- wave-02: phase-01-first.md"), phases), /earlier wave/);
 	assert.throws(() => validateOrchestration(orchestrationSmall.replace("deepseek/deepseek-v4-pro:max", "deepseek/deepseek-v4-pro:high"), phases), /Model Assignments.*exact structured/);
-	assert.throws(() => validateOrchestration(orchestrationSmall.replace("exactly one implementation agent per phase", "two implementation agents per phase"), phases), /Model Assignments.*exact structured/);
+	assert.throws(() => validateOrchestration(orchestrationSmall.replace("exactly one implementation agent per unsplit phase, or one sequential agent per lettered subphase for split phases", "two implementation agents per phase"), phases), /Model Assignments.*exact structured/);
 	assert.throws(() => validateOrchestration(orchestrationSmall.replace("review-and-repair must PASS", "review only"), phases), /Validation Gate.*exact structured/);
 	assert.throws(() => validateOrchestration(orchestrationSmall.replace("run final integration validation", "skip final integration validation"), phases), /Final Integration.*exact structured/);
 	assert.throws(() => validateOrchestration(`${orchestrationSmall}\n## Extra\n\nNot part of the schema.\n`, phases), /only the six required level-two sections/);
@@ -2140,8 +2173,8 @@ test("ThinkingLevel type contains each level exactly once", () => {
 	assert.ok(levels.has("high"));
 	assert.ok(levels.has("xhigh") === false); // not used but exists in type
 	assert.ok(levels.has("max"));
-	// Verify MODEL_ROUTES.advancedReviewer uses max
-	assert.equal(MODEL_ROUTES.advancedReviewer.thinking, "max");
+	// Verify MODEL_ROUTES.advancedReviewer uses high
+	assert.equal(MODEL_ROUTES.advancedReviewer.thinking, "high");
 	// Verify no duplicate medium in union by checking all values are valid
 	for (const route of Object.values(MODEL_ROUTES)) {
 		const valid: string[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
@@ -3107,7 +3140,7 @@ async function makeBranchingPlanDir(planDir: string): Promise<void> {
 		"", "## Model Assignments", "",
 		"- Implementation: deepseek/deepseek-v4-pro:max",
 		"- Validation: openai-codex/gpt-5.6-terra:high",
-		"- Implementers: exactly one implementation agent per phase",
+		"- Implementers: exactly one implementation agent per unsplit phase, or one sequential agent per lettered subphase for split phases",
 		"", "## Validation Gate", "",
 		"- Gate: post-phase validator review-and-repair must PASS before a phase is complete.",
 		"- Dependencies: no dependent phase starts before every dependency has PASS.",
@@ -4015,6 +4048,7 @@ interface SpawnExample {
 	model: string;
 	thinkingLevel: string;
 	tools: string[];
+	allowSubagents?: boolean;
 }
 
 function extractSpawnExamples(content: string): SpawnExample[] {
@@ -4036,12 +4070,14 @@ function extractSpawnExamples(content: string): SpawnExample[] {
 			}
 			assert.ok(Array.isArray(value.tools), "spawn agent tools must be a literal array");
 			assert.equal(value.tools.every((tool) => typeof tool === "string"), true, "spawn tools must be strings");
+			if ("allowSubagents" in value) assert.equal(typeof value.allowSubagents, "boolean", "spawn agent allowSubagents must be boolean when present");
 			results.push({
 				name: value.name as string,
 				provider: value.provider as string,
 				model: value.model as string,
 				thinkingLevel: value.thinkingLevel as string,
 				tools: [...value.tools] as string[],
+				...(typeof value.allowSubagents === "boolean" ? { allowSubagents: value.allowSubagents } : {}),
 			});
 		}
 	}
@@ -4356,12 +4392,14 @@ function assertSeniorSkillContract(content: string): void {
 	assert.equal(parsed.frontmatter.get("name"), "senior-agent");
 	assert.match(parsed.frontmatterText, /^metadata:\s*\n  version: "3\.0\.0"$/m);
 	assert.match(content, /ambiguous authority.*advisory tool set.*prohibit edits/is);
-	assert.match(content, /must not receive subagent, sprint validation, sprint execution, user-questioning, or other root-only tools/i);
+	assert.match(content, /Always set `allowSubagents: true` on the senior agent/i);
+	assert.match(content, /must not receive sprint validation, sprint execution, user-questioning, or other root-only tools/i);
+	assert.match(content, /any subagent spawned by the senior agent must not receive further subagent controls/i);
 	const examples = extractSpawnExamples(content);
 	assert.equal(examples.length, 2, "senior-agent must show exactly advisory and edit-authorized spawns");
-	assert.deepEqual(examples.map(({ name, provider, model, thinkingLevel, tools }) => ({ name: name.replace(/<[^>]+>/g, "<unique>"), provider, model, thinkingLevel, tools })), [
-		{ name: "senior-<unique>", provider: "openai-codex", model: "gpt-5.6-sol", thinkingLevel: "xhigh", tools: ["read"] },
-		{ name: "senior-<unique>", provider: "openai-codex", model: "gpt-5.6-sol", thinkingLevel: "xhigh", tools: ["read", "bash", "edit", "write"] },
+	assert.deepEqual(examples.map(({ name, provider, model, thinkingLevel, tools, allowSubagents }) => ({ name: name.replace(/<[^>]+>/g, "<unique>"), provider, model, thinkingLevel, tools, allowSubagents })), [
+		{ name: "senior-<unique>", provider: "openai-codex", model: "gpt-5.6-sol", thinkingLevel: "xhigh", tools: ["read"], allowSubagents: true },
+		{ name: "senior-<unique>", provider: "openai-codex", model: "gpt-5.6-sol", thinkingLevel: "xhigh", tools: ["read", "bash", "edit", "write"], allowSubagents: true },
 	]);
 }
 
@@ -4388,6 +4426,7 @@ test("senior-agent advisory spawn example has exact read-only tool set", async (
 		assert.equal(adv.model, "gpt-5.6-sol");
 		assert.equal(adv.thinkingLevel, "xhigh");
 		assert.deepEqual(adv.tools, ["read"]);
+		assert.equal(adv.allowSubagents, true);
 	}
 });
 
@@ -4402,13 +4441,15 @@ test("senior-agent edit-authorized spawn example has exact four-tool set", async
 		assert.equal(ed.model, "gpt-5.6-sol");
 		assert.equal(ed.thinkingLevel, "xhigh");
 		assert.deepEqual(ed.tools, ["read", "bash", "edit", "write"]);
+		assert.equal(ed.allowSubagents, true);
 	}
 });
 
-test("senior-agent forbids root-only and undeclared tools", async () => {
+test("senior-agent allows one subagent layer while forbidding other root-only tools", async () => {
 	const content = await loadSeniorSkill();
-	assert.match(content, /must not receive subagent/i);
-	assert.match(content, /other root-only tools/i);
+	assert.match(content, /Always set `allowSubagents: true` on the senior agent/i);
+	assert.match(content, /spawn one bounded nested delegation layer/i);
+	assert.match(content, /must not receive sprint validation, sprint execution, user-questioning, or other root-only tools/i);
 	assert.match(content, /atomic.*batch.*rejected/i);
 	assert.match(content, /registered tool does not need to be active in the caller.*enables it for the child/is);
 	assert.match(content, /fixed sets.*only tools registered in the standard coding harness.*search and listing through `bash`/is);
@@ -4496,7 +4537,7 @@ test("mutation: image-viewing with extra tools is rejected", async () => {
 });
 
 test("mutation: senior-agent with missing advisory tools is rejected", async () => {
-	const content = (await loadSeniorSkill()).replace(/"tools"\s*:\s*\[\s*"read"\s*\](?=\n\s*})/, '"tools": []');
+	const content = (await loadSeniorSkill()).replace(/"tools"\s*:\s*\[\s*"read"\s*\](?=,?\n\s*"allowSubagents")/, '"tools": []');
 	assert.throws(() => assertSeniorSkillContract(content), /strictly deep-equal/);
 });
 

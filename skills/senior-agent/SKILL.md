@@ -20,7 +20,7 @@ Do not perform the senior escalation in the caller's own model context. Always l
 
 These values must never be inherited, omitted, downgraded, or replaced. Pi's canonical provider identifier for the Codex provider is `openai-codex`.
 
-If `subagent_spawn` or `subagent_poll` is unavailable, or the required model, authentication, or thinking level is rejected, do not emulate the senior agent with another model. Report that the escalation could not run and include the concrete failure. When the caller is itself a direct subagent, these controls are available only if the root explicitly launched it with `allowSubagents: true`; escalation agents cannot spawn another layer.
+If `subagent_spawn` or `subagent_poll` is unavailable, or the required model, authentication, or thinking level is rejected, do not emulate the senior agent with another model. Report that the escalation could not run and include the concrete failure. When the caller is itself a direct subagent, these controls are available only if the root explicitly launched it with `allowSubagents: true`. Senior escalation agents must also be launched with `allowSubagents: true` so they can spawn one bounded nested delegation layer when useful; any subagent they spawn must not receive further subagent controls.
 
 ## Exact tool policy
 
@@ -37,7 +37,7 @@ The escalation brief must explicitly determine which tool set applies:
   "tools": ["read", "bash", "edit", "write"]
   ```
 
-When the escalation brief does not explicitly grant edit authority, use the advisory tool set and prohibit edits. The senior agent must not receive subagent, sprint validation, sprint execution, user-questioning, or other root-only tools. Never set `allowSubagents: true` on the senior agent: the supported hierarchy ends at this escalation layer. Excluded tool definitions and guidance never enter child context.
+When the escalation brief does not explicitly grant edit authority, use the advisory tool set and prohibit edits. Always set `allowSubagents: true` on the senior agent so it can spawn bounded read-only or edit-authorized helper agents when that is the best way to complete the escalation. The senior agent must not receive sprint validation, sprint execution, user-questioning, or other root-only tools, and any subagent spawned by the senior agent must not receive further subagent controls. Excluded root-only tool definitions and guidance never enter child context.
 
 ## When to escalate
 
@@ -83,7 +83,8 @@ Choose a short, descriptive name that has not been used in the current root sess
       "provider": "openai-codex",
       "model": "gpt-5.6-sol",
       "thinkingLevel": "xhigh",
-      "tools": ["read"]
+      "tools": ["read"],
+      "allowSubagents": true
     }
   ]
 }
@@ -100,7 +101,8 @@ Choose a short, descriptive name that has not been used in the current root sess
       "provider": "openai-codex",
       "model": "gpt-5.6-sol",
       "thinkingLevel": "xhigh",
-      "tools": ["read", "bash", "edit", "write"]
+      "tools": ["read", "bash", "edit", "write"],
+      "allowSubagents": true
     }
   ]
 }

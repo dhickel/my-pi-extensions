@@ -1012,7 +1012,7 @@ export class SprintPlannerEngine {
 			"planning-author",
 			"planning",
 			MODEL_ROUTES.advancedPlanner,
-			{ role: "advanced planner", mode: "planning", prompt: advancedPlanPrompt(handoff), contextPaths: ["ironout/handoff.md"], expectation: { kind: "files", minFiles: 4, maxFiles: 12 }, maxSeniorCalls: 2, seniorModel: MODEL_ROUTES.advancedAdvisor },
+			{ role: "advanced planner", mode: "planning", prompt: advancedPlanPrompt(handoff), contextPaths: ["ironout/handoff.md"], expectation: { kind: "files", minFiles: 4, maxFiles: 22 }, maxSeniorCalls: 2, seniorModel: MODEL_ROUTES.advancedAdvisor },
 			(submission) => { validateDraftPlanShape(submission.files!); },
 			async (submission) => Promise.all(submission.files!.map((file) => store.write(`planning-draft/${file.path}`, file.content))),
 		);
@@ -1025,7 +1025,7 @@ export class SprintPlannerEngine {
 			"planning-decomposition",
 			"planning",
 			MODEL_ROUTES.advancedReviewer,
-			{ role: "advanced decomposition reviewer", mode: "planning", prompt: advancedDecompositionReviewPrompt(handoff, draftFiles), contextPaths: ["ironout/handoff.md", ...draftFiles.map((f) => `planning-draft/${f.path}`)], expectation: { kind: "files", minFiles: 5, maxFiles: 13 }, maxSeniorCalls: 1, seniorModel: MODEL_ROUTES.advancedAdvisor },
+			{ role: "advanced decomposition reviewer", mode: "planning", prompt: advancedDecompositionReviewPrompt(handoff, draftFiles), contextPaths: ["ironout/handoff.md", ...draftFiles.map((f) => `planning-draft/${f.path}`)], expectation: { kind: "files", minFiles: 5, maxFiles: 23 }, maxSeniorCalls: 1, seniorModel: MODEL_ROUTES.advancedAdvisor },
 			(submission) => {
 				const review = submission.files!.filter((file) => file.path === "review.md");
 				if (review.length !== 1) throw new Error("Decomposition review must submit exactly one review.md.");
@@ -1406,14 +1406,14 @@ export class SprintPlannerEngine {
 		const plansParent = resolve(options.internalDevPath, "plans");
 		const staging = await createStandaloneStaging(plansParent, options.id);
 		const draft = await this.#standaloneCall(
-			this.#request(options, { id: `${options.id}-plan`, role: "advanced planner", model: MODEL_ROUTES.advancedPlanner, mode: "planning", prompt: advancedPlanPrompt(options.directive), contextPaths: [], expectation: { kind: "files", minFiles: 4, maxFiles: 12 }, maxSeniorCalls: 2, seniorModel: MODEL_ROUTES.advancedAdvisor }),
+			this.#request(options, { id: `${options.id}-plan`, role: "advanced planner", model: MODEL_ROUTES.advancedPlanner, mode: "planning", prompt: advancedPlanPrompt(options.directive), contextPaths: [], expectation: { kind: "files", minFiles: 4, maxFiles: 22 }, maxSeniorCalls: 2, seniorModel: MODEL_ROUTES.advancedAdvisor }),
 			(submission) => validateDraftPlanShape(submission.files!),
 		);
 		await writeStagedFiles(staging, "planning-draft", draft.files!);
 
 		// ── Decomposition correction gate ──
 		const decomp = await this.#standaloneCall(
-			this.#request(options, { id: `${options.id}-review-decomposition`, role: "advanced decomposition reviewer", model: MODEL_ROUTES.advancedReviewer, mode: "planning", prompt: advancedDecompositionReviewPrompt(options.directive, draft.files!), contextPaths: [], expectation: { kind: "files", minFiles: 5, maxFiles: 13 }, maxSeniorCalls: 1, seniorModel: MODEL_ROUTES.advancedAdvisor }),
+			this.#request(options, { id: `${options.id}-review-decomposition`, role: "advanced decomposition reviewer", model: MODEL_ROUTES.advancedReviewer, mode: "planning", prompt: advancedDecompositionReviewPrompt(options.directive, draft.files!), contextPaths: [], expectation: { kind: "files", minFiles: 5, maxFiles: 23 }, maxSeniorCalls: 1, seniorModel: MODEL_ROUTES.advancedAdvisor }),
 			(submission) => {
 				const review = submission.files!.filter((file) => file.path === "review.md");
 				if (review.length !== 1) throw new Error("Decomposition review must submit exactly one review.md.");

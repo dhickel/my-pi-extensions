@@ -35,12 +35,13 @@ export type RunStatus = "running" | "paused" | "interrupted" | "failed" | "compl
 export type ProgressStatus = RunStatus | "starting";
 export type StepStatus = "pending" | "running" | "interrupted" | "completed" | "failed";
 export type WorkerMode = "planning";
-export type ScopeSize = "small" | "medium" | "large";
+export type ScopeSize = "small" | "medium" | "large" | "extra-large";
 
 export const PHASE_BUDGETS: Record<ScopeSize, { min: number; max: number }> = {
 	small: { min: 2, max: 3 },
 	medium: { min: 3, max: 5 },
 	large: { min: 6, max: 10 },
+	"extra-large": { min: 11, max: 20 },
 };
 
 export const ORCHESTRATION_HEADINGS = ["Scope Size", "Phase Ledger", "Execution Waves", "Model Assignments", "Validation Gate", "Final Integration"];
