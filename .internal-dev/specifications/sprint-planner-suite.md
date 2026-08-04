@@ -28,7 +28,7 @@ The extension registers:
 - `sprint_validate_plan` as a read-only structured plan validator returning versioned diagnostics.
 - `sprint_execution_record` as a versioned execution-evidence persistence tool with `start`, `checkpoint`, and `finish` actions.
 
-All five agent-callable tools are sequential long-running tools. `sprint_ironout` and `sprint_advanceplan` expose no model parameters: the engine supplies `MODEL_ROUTES.ironoutAuthor`, `ironoutReviewer`, `advancedPlanner`, `advancedAdvisor`, and `advancedReviewer`. Relative input paths resolve from Pi's current working directory; a leading `@` is accepted for parity with built-in path tools.
+All five agent-callable tools are sequential long-running tools. `sprint_ironout` and `sprint_advanceplan` expose no model parameters: the engine supplies `MODEL_ROUTES.ironoutAuthor` and `ironoutReviewer`, while advanced planning uses the configuration loaded from `sprint-planner/configs/default.ts`. Relative input paths resolve from Pi's current working directory; a leading `@` is accepted for parity with built-in path tools.
 
 The extension does not register `/orchestrate`, expose a standalone orchestration engine method, launch implementation workers, or perform repository implementation/final validation. Pi exposes the skill as `/skill:orchestrate` when skill commands are enabled.
 
@@ -40,6 +40,8 @@ Bare start commands open Pi's multiline editor. Standalone management is limited
 
 The extension engine owns planning stage sequencing, exact planning model tuples, brainstorming concurrency, typed planning handoffs, structural gates, retries, state transitions, cleanup, repeatable run-record discovery, versioned lease management, read-only diagnosis, structured plan validation, and execution-record persistence. Slash-command work starts in the background so the root session remains usable; the five agent-callable planning tools wait for the same engine-owned standalone result.
 
+Brainstorm and ironout tuples are exact `MODEL_ROUTES` in `types.ts`. Advanced-planning assignments are exact schema-conforming objects in `sprint-planner/configs/`: `configs/default.ts` is registered as the sole default, and extension initialization loads it once before supplying the same snapshot to every engine. No caller or runtime selection exists yet.
+
 All extension model tuples are exact:
 
 | Responsibility | Provider/model | Thinking |
@@ -47,8 +49,9 @@ All extension model tuples are exact:
 | Brainstorm role routing | `openai-codex/gpt-5.6-sol` | `high` |
 | Brainstorm and cross-review workers | `deepseek/deepseek-v4-pro` | `max` |
 | Brainstorm synthesis and red team | `openai-codex/gpt-5.6-sol` | `high` |
-| Ironout author / corrective reviewer | `openai-codex/gpt-5.6-sol` | `high` / `medium` |
-| Advanced planner / adviser / corrective reviewers | `openai-codex/gpt-5.6-sol` | `high` / `max` / `medium` |
+| Ironout author / corrective reviewer | `openai-codex/gpt-5.6-sol` / `openai-codex/gpt-5.6-terra` | `high` / `high` |
+| Advanced planner / adviser | `openai-codex/gpt-5.6-sol` | `high` / `max` |
+| Advanced decomposition, concepts, orchestration, and phase reviewers | `openai-codex/gpt-5.6-terra` | `high` |
 
 Unavailable models, authentication, or thinking capabilities are errors; the runner does not substitute or clamp them. Every extension child receives planning-mode read-only project tools. Advanced planners retain a bounded advisory tool; no child receives coding tools or a toolchain-blocker tool.
 
@@ -70,7 +73,7 @@ Each unsplit phase groups cohesive edits by targets, domain, or vertical logic a
 
 `orchestration.md` owns the complete phase ledger in phase order, dependencies, canonical write targets, goals, contiguous sequential or parallel waves, exact implementation and validation tuples, the post-phase review-and-repair PASS gate, and final-integration metadata. Every phase appears exactly once in the ledger and waves; dependencies run in earlier waves, and parallel members have non-overlapping targets.
 
-Corrective review runs in the fixed sequence concepts → orchestration → each phase, using one `medium` call per component. A phase reviewer receives corrected concepts, corrected orchestration, its phase, and the phase-name index. Reviewers return complete replacements and do not add, remove, split, or merge phase files. Semantic validation occurs inside each component's retry boundary before checkpoint completion; resume semantically revalidates hash-valid completed planning components and invalidates the first bad component plus downstream work.
+Corrective review runs in the fixed sequence decomposition → concepts → orchestration → each phase, using one `openai-codex/gpt-5.6-terra:high` call per component from the loaded configuration. A phase reviewer receives corrected concepts, corrected orchestration, its phase, and the phase-name index. Reviewers return complete replacements and do not add, remove, split, or merge phase files. Semantic validation occurs inside each component's retry boundary before checkpoint completion; resume semantically revalidates hash-valid completed planning components and invalidates the first bad component plus downstream work.
 
 Authoring and corrective-review prompts instruct models not to include human implementation time, duration, effort, ETA, target-date, or calendar-schedule estimates because plans describe what to do, not how long it takes. This guidance is instruction-only: deterministic validators do not scan output wording or reject durations. Technical machine timing such as timeout, TTL, retry, backoff, polling, cache retention, and lease values remains valid, as do complexity notation and operational wave language.
 
@@ -89,12 +92,12 @@ The skill requires Pi's subagent spawn, poll, status, and cancel tools. It must 
 | Responsibility | Provider/model | Thinking |
 | --- | --- | --- |
 | Phase implementation | `deepseek/deepseek-v4-pro` (DeepSeek Pro V4) | `max` |
-| Independent validation of every phase | `openai-codex/gpt-5.6-sol` | `medium` |
-| Final integration validation | `openai-codex/gpt-5.6-sol` | `medium` |
+| Independent validation of every phase | `openai-codex/gpt-5.6-terra` | `high` |
+| Final integration validation | `openai-codex/gpt-5.6-terra` | `high` |
 
 Before edits, one atomic spawn batch preflights both tuples with no-op agents. Missing models, authentication, tools, or thinking support stop execution; the skill never substitutes another tuple. One unsplit phase maps to one DeepSeek `max` implementation-agent session. A phase with explicit lettered subphases maps each subphase to one sequential DeepSeek `max` session in letter order; no runtime token calculation or enforcement is performed.
 
-Every implementation wave fully settles before validation. Every phase receives one independent GPT-5.6 Sol `medium` review-and-repair agent with full edit authority only after its unsplit implementation or all of its lettered subphases complete. The validator inspects actual repository state, checks every criterion, repairs in-scope defects itself, reruns required checks, and returns exactly `VERDICT: PASS` or `VERDICT: BLOCKED` with evidence sections. There is no read-only validation mode, `VERDICT: REPAIR`, or separate DeepSeek repair handoff. A malformed or missing verdict is retried once, then blocks. A valid `BLOCKED` verdict is a durable retryable attempt: disjoint siblings may continue, the same phase may receive later validation attempts, and dependents wait until every dependency's latest verdict is `PASS`. After all phases pass, one GPT-5.6 Sol `medium` integration validator performs the same review-and-repair gate across the complete workflow.
+Every implementation wave fully settles before validation. Every phase receives one independent GPT-5.6 Terra `high` review-and-repair agent with full edit authority only after its unsplit implementation or all of its lettered subphases complete. The validator inspects actual repository state, checks every criterion, repairs in-scope defects itself, reruns required checks, and returns exactly `VERDICT: PASS` or `VERDICT: BLOCKED` with evidence sections. There is no read-only validation mode, `VERDICT: REPAIR`, or separate DeepSeek repair handoff. A malformed or missing verdict is retried once, then blocks. A valid `BLOCKED` verdict is a durable retryable attempt: disjoint siblings may continue, the same phase may receive later validation attempts, and dependents wait until every dependency's latest verdict is `PASS`. After all phases pass, one GPT-5.6 Terra `high` integration validator performs the same review-and-repair gate across the complete workflow.
 
 Changed-file evidence is truthful rather than target-authorized. Unexpected canonical safe paths are persisted and returned as structured plan-drift warnings; the frozen target map remains immutable. The skill widens only its observed write sets, reassesses overlap before validators or later phases, serializes validators when discovered write sets overlap, and blocks future unsafe authoritative implementation waves rather than silently changing their topology.
 

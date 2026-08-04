@@ -47,7 +47,15 @@ Standalone commands support `status` and `cancel`, use in-memory child sessions,
 - `sprint_ironout` — accepts a brainstorm directory or other input artifact path, runs autonomous authoring and corrective review via engine-owned model routes, and returns the corrected handoff path.
 - `sprint_advanceplan` — accepts a corrected handoff path, runs concept review → orchestration review → per-phase reviews via engine-owned model routes, and returns the reviewed plan directory.
 
-Together with `sprint_validate_plan` and `sprint_execution_record`, these are the extension's five agent-callable tools. The three planning tools are sequential long-running tools. `sprint_ironout` and `sprint_advanceplan` expose no model parameters: the engine supplies `MODEL_ROUTES`. Relative input paths resolve from Pi's current working directory; a leading `@` is accepted for parity.
+Together with `sprint_validate_plan` and `sprint_execution_record`, these are the extension's five agent-callable tools. The three planning tools are sequential long-running tools. `sprint_ironout` and `sprint_advanceplan` expose no model parameters: the engine supplies fixed routes, with advanced-plan agents resolved from the loaded default configuration. Relative input paths resolve from Pi's current working directory; a leading `@` is accepted for parity.
+
+## Agent model configuration
+
+Every sprint-planner agent assignment lives in `configs/`. `configs/default.ts` is the current configuration and must conform to `SprintPlannerAgentConfiguration` in `types.ts` — covering every planning stage (role router, brainstorm workers, synthesizer, red team, ironout author and reviewer, planner, advisor, and all review roles) plus execution roles (implementation worker, phase validator, integration validator, and senior escalation advisor). `configs/index.ts` registers installed configurations and fixes `DEFAULT_SPRINT_PLANNER_AGENT_CONFIGURATION` to `default`.
+
+When Pi loads `sprintPlannerExtension()`, the extension resolves that fixed default into `currentAgentConfiguration`. Every `SprintPlannerEngine` created by the extension receives this same configuration snapshot and uses it for every pipeline stage. Resolved tuples, not configuration names, remain in persisted state. There is no runtime setting, command option, or tool parameter to select another configuration yet.
+
+A future configuration must be added as a schema-conforming file in `configs/`, registered in `configs/index.ts`, and paired with an explicitly approved configuration-selection contract. Do not alter the default loader or expose a caller-selected model as a shortcut.
 
 ## Validation and execution-evidence tools
 
@@ -104,7 +112,7 @@ Root agents call `sprint_brainstorm` for the same engine-owned lifecycle. Generi
 
 ## Planning and structural gates
 
-Advanced-plan correction runs in order: one `medium` concepts review, one `medium` orchestration review, then one independent `medium` corrective review per phase. Each phase reviewer receives corrected `concepts.md`, corrected `orchestration.md`, exactly one phase, and the phase-name index. Component semantics are checked inside their retry boundaries and rechecked on resume before completed checkpoints are trusted.
+Advanced-plan correction runs in order: one decomposition review, one concepts review, one orchestration review, then one independent corrective review per phase. All four review roles use the loaded default configuration's `openai-codex/gpt-5.6-terra:high` assignment. Each phase reviewer receives corrected `concepts.md`, corrected `orchestration.md`, exactly one phase, and the phase-name index. Component semantics are checked inside their retry boundaries and rechecked on resume before completed checkpoints are trusted.
 
 The published plan contains only `concepts.md`, exact structured `orchestration.md`, and flat contiguous `phase-NN-*.md` files; component reviews remain outside `planning/`. Scope is small (2–3 phases), medium (3–5), large (6–10), or extra-large (11–20). `orchestration.md` owns the complete phase ledger, dependencies, write targets, contiguous execution waves, exact model assignments, PASS gate, and final integration metadata.
 

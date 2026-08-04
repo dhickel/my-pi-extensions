@@ -9,18 +9,6 @@ export const MIN_BRAINSTORM_AGENTS = 2;
 export const MAX_BRAINSTORM_AGENTS = 8;
 export const MAX_STEP_ATTEMPTS = 3;
 
-export const MODEL_ROUTES = {
-	roleRouter: { provider: "openai-codex", model: "gpt-5.6-sol", thinking: "high" },
-	brainstormWorker: { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" },
-	brainstormSynthesis: { provider: "openai-codex", model: "gpt-5.6-sol", thinking: "high" },
-	brainstormRedTeam: { provider: "openai-codex", model: "gpt-5.6-sol", thinking: "high" },
-	ironoutAuthor: { provider: "openai-codex", model: "gpt-5.6-sol", thinking: "high" },
-	ironoutReviewer: { provider: "openai-codex", model: "gpt-5.6-terra", thinking: "high" },
-	advancedPlanner: { provider: "openai-codex", model: "gpt-5.6-sol", thinking: "high" },
-	advancedAdvisor: { provider: "openai-codex", model: "gpt-5.6-sol", thinking: "max" },
-	advancedReviewer: { provider: "openai-codex", model: "gpt-5.6-terra", thinking: "high" },
-} as const satisfies Record<string, ModelTuple>;
-
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
 export interface ModelTuple {
@@ -29,7 +17,47 @@ export interface ModelTuple {
 	thinking: ThinkingLevel;
 }
 
-export type WorkflowName = "sprint" | "brainstorm" | "ironout" | "advanceplan";
+/** Reusable exact tuples; agent assignments below select from this catalog. */
+export const MODEL_PROFILES = {
+	solHigh: { provider: "openai-codex", model: "gpt-5.6-sol", thinking: "high" },
+	solMax: { provider: "openai-codex", model: "gpt-5.6-sol", thinking: "max" },
+	solXhigh: { provider: "openai-codex", model: "gpt-5.6-sol", thinking: "xhigh" },
+	terraHigh: { provider: "openai-codex", model: "gpt-5.6-terra", thinking: "high" },
+	deepseekProMax: { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" },
+	deepseekFlashMax: { provider: "deepseek", model: "deepseek-v4-flash", thinking: "max" },
+} as const satisfies Record<string, ModelTuple>;
+
+/** Every agent whose model assignment is controlled by the loaded configuration. */
+export type SprintPlannerAgentId =
+	| "roleRouter"
+	| "brainstormWorker"
+	| "brainstormSynthesis"
+	| "brainstormRedTeam"
+	| "ironoutAuthor"
+	| "ironoutReviewer"
+	| "planner"
+	| "advisor"
+	| "decompositionReviewer"
+	| "conceptsReviewer"
+	| "orchestrationReviewer"
+	| "phaseReviewer"
+	| "implementationWorker"
+	| "phaseValidator"
+	| "integrationValidator"
+	| "executionAdvisor";
+
+export interface SprintPlannerAgentAssignment {
+	model: ModelTuple;
+	maxSeniorCalls?: number;
+	seniorAdvisor?: SprintPlannerAgentId;
+}
+
+/** Schema shared by every file in configs/. */
+export type SprintPlannerAgentConfiguration = {
+	readonly [Id in SprintPlannerAgentId]: SprintPlannerAgentAssignment;
+};
+
+export type WorkflowName = "sprint" | "brainstorm" | "ironout" | "advanceplan" | "orchestrate";
 export type SprintStage = "brainstorm" | "ironout" | "planning" | "complete";
 export type RunStatus = "running" | "paused" | "interrupted" | "failed" | "completed" | "cancelled";
 export type ProgressStatus = RunStatus | "starting";

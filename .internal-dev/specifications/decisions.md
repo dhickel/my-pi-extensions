@@ -4,13 +4,13 @@ Record accepted decisions, justification, alternatives, caveats, affected specif
 
 ## 2026-07-15 — Sprint planner model routing is code-owned and exact
 
-- Decision: every deterministic extension planning responsibility uses the provider, model, and thinking tuple in `sprint-planner/types.ts`; DeepSeek brainstorming workers require `max`, and GPT-5.6 Sol planning roles use their specified `high`, `xhigh`, or `max` level.
-- Justification: deterministic routing prevents root-model drift and makes cost, capability, and validation behavior testable.
-- Alternative: inherit the root model or clamp unsupported levels. Rejected because it silently changes the intended workflow.
-- Caveat: a missing model, authentication, or exact thinking capability pauses the workflow rather than substituting a model.
+- Decision: every deterministic extension planning responsibility uses an exact provider, model, and thinking tuple. Brainstorm and ironout routes remain in `sprint-planner/types.ts`; advanced-planning assignments are schema-conforming files in `sprint-planner/configs/`. Extension initialization loads the registered `default` configuration once and injects that snapshot into every planning engine.
+- Justification: deterministic routing prevents root-model drift and makes cost, capability, and validation behavior testable, while configuration files make additional vetted assignments additive without enabling unapproved runtime selection.
+- Alternative: inherit the root model, clamp unsupported levels, or expose caller-selected configurations. Rejected because each silently changes the intended workflow or weakens the fixed route contract.
+- Caveat: a missing model, authentication, or exact thinking capability pauses the workflow rather than substituting a model. The resolved tuple remains persisted in state; configuration names are not persisted and the current configuration is fixed to `default`.
 - Affected specification: `sprint-planner-suite.md`.
-- Source: Resilient Pi Sprint Planner Suite implementation brief.
-- Review timing: when extension planning model ids or supported thinking metadata change.
+- Source: Resilient Pi Sprint Planner Suite implementation brief and user direction on 2026-08-04.
+- Review timing: when extension planning model ids, configuration files, or supported thinking metadata change.
 
 ## 2026-07-15 — Standalone planning workflows are stateless and full planning runs are resumable
 

@@ -12,7 +12,7 @@ Interpret and execute an authoritative workflow supplied by the user. The input 
 
 ## Fixed model contract
 
-Use exactly these tuples for delegated work:
+Every delegated model tuple is drawn from the loaded sprint-planner agent configuration (`configs/default.ts`). The current default assignments are:
 
 - Implementation — DeepSeek Pro V4:
   - `provider`: `deepseek`
@@ -22,8 +22,12 @@ Use exactly these tuples for delegated work:
   - `provider`: `openai-codex`
   - `model`: `gpt-5.6-terra`
   - `thinkingLevel`: `high`
+- Senior escalation — GPT-5.6 Sol:
+  - `provider`: `openai-codex`
+  - `model`: `gpt-5.6-sol`
+  - `thinkingLevel`: `xhigh`
 
-Never inherit, omit, downgrade, clamp, or substitute either tuple. If a required model, authentication, or thinking level is unavailable, stop before implementation and report the exact failure. In particular, do not replace GPT-5.6 Terra with another GPT version or a different thinking level.
+The configuration is the authoritative source; if an alternate configuration is loaded these tuples may differ. Never inherit, omit, downgrade, clamp, or substitute any tuple — every spawn must explicitly supply the resolved provider, model, and thinking fields. If a required model, authentication, or thinking level is unavailable, stop before implementation and report the exact failure.
 
 Implementation self-reports, root inspection, and test output do not replace independent GPT-5.6 Terra high phase validation.
 

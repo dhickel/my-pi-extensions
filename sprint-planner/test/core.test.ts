@@ -10,6 +10,8 @@ import {
 	BRAINSTORM_HEADINGS,
 	BRAINSTORM_LIFECYCLE_REQUIREMENT,
 	BRAINSTORM_TOOL_GUIDELINES,
+	SPRINT_PLANNER_AGENT_CONFIGURATIONS,
+	DEFAULT_SPRINT_PLANNER_AGENT_CONFIGURATION,
 	checkpointExecutionRecord as checkpointExecutionRecordDetailed,
 	classifyRun,
 	CONCEPT_HEADINGS,
@@ -24,8 +26,8 @@ import {
 	inspectPlanDirectory,
 	interruptActiveRecord,
 	leasePath,
+	loadDefaultSprintPlannerAgentConfiguration,
 	loadExecutionRecord,
-	MODEL_ROUTES,
 	observeChangedFile,
 	ORCHESTRATION_HEADINGS,
 	parseCommand,
@@ -270,25 +272,67 @@ test("workflow prompts remain raw and are never probed or expanded as paths", ()
 	assert.throws(() => acceptWorkflowInput(" \n\t"), /prompt is required/);
 });
 
-test("model routing contains only planning responsibilities with exact tuples", () => {
-	assert.deepEqual(Object.keys(MODEL_ROUTES), [
+test("agent configuration covers every sprint-planner role with exact tuples", () => {
+	assert.equal(DEFAULT_SPRINT_PLANNER_AGENT_CONFIGURATION, "default");
+	const agents = SPRINT_PLANNER_AGENT_CONFIGURATIONS.default;
+	assert.equal(loadDefaultSprintPlannerAgentConfiguration(), agents);
+	assert.deepEqual(Object.keys(agents), [
 		"roleRouter",
 		"brainstormWorker",
 		"brainstormSynthesis",
 		"brainstormRedTeam",
 		"ironoutAuthor",
 		"ironoutReviewer",
-		"advancedPlanner",
-		"advancedAdvisor",
-		"advancedReviewer",
+		"planner",
+		"advisor",
+		"decompositionReviewer",
+		"conceptsReviewer",
+		"orchestrationReviewer",
+		"phaseReviewer",
+		"implementationWorker",
+		"phaseValidator",
+		"integrationValidator",
+		"executionAdvisor",
 	]);
-	for (const route of Object.values(MODEL_ROUTES)) {
-		if (route.model === "deepseek-v4-pro") assert.deepEqual(route, { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" });
-		else if (route.model === "gpt-5.6-terra") assert.equal(route.thinking, "high");
-		else assert.equal(route.model, "gpt-5.6-sol");
+	// Model tuples
+	for (const entry of Object.values(agents)) {
+		const m = entry.model;
+		if (m.model === "deepseek-v4-pro") assert.deepEqual(m, { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" });
+		else if (m.model === "gpt-5.6-terra") assert.equal(m.thinking, "high");
+		else if (m.thinking === "xhigh") assert.deepEqual(m, { provider: "openai-codex", model: "gpt-5.6-sol", thinking: "xhigh" });
+		else assert.equal(m.model, "gpt-5.6-sol");
 	}
-	assert.deepEqual(MODEL_ROUTES.ironoutReviewer, { provider: "openai-codex", model: "gpt-5.6-terra", thinking: "high" });
-	assert.equal(MODEL_ROUTES.advancedAdvisor.thinking, "max");
+	assert.deepEqual(agents.ironoutReviewer.model, { provider: "openai-codex", model: "gpt-5.6-terra", thinking: "high" });
+	// Assignments with senior-call metadata
+	assert.deepEqual(agents.planner, { model: { provider: "openai-codex", model: "gpt-5.6-sol", thinking: "high" }, maxSeniorCalls: 2, seniorAdvisor: "advisor" });
+	assert.deepEqual(agents.advisor, { model: { provider: "openai-codex", model: "gpt-5.6-sol", thinking: "max" } });
+	assert.deepEqual(agents.decompositionReviewer, { model: { provider: "openai-codex", model: "gpt-5.6-terra", thinking: "high" }, maxSeniorCalls: 1, seniorAdvisor: "advisor" });
+	for (const agent of [agents.conceptsReviewer, agents.orchestrationReviewer, agents.phaseReviewer]) {
+		assert.deepEqual(agent, { model: { provider: "openai-codex", model: "gpt-5.6-terra", thinking: "high" } });
+	}
+	// Simple model-only assignments
+	for (const key of ["roleRouter", "brainstormSynthesis", "brainstormRedTeam", "ironoutAuthor", "implementationWorker", "phaseValidator", "integrationValidator"] as const) {
+		assert.deepEqual(agents[key], { model: agents[key].model });
+	}
+	assert.deepEqual(agents.brainstormWorker, { model: { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" } });
+	assert.deepEqual(agents.executionAdvisor, { model: { provider: "openai-codex", model: "gpt-5.6-sol", thinking: "xhigh" } });
+});
+
+test("lite configuration assigns every agent to deepseek-v4-pro max except the implementation worker", () => {
+	const lite = SPRINT_PLANNER_AGENT_CONFIGURATIONS.lite;
+	assert.deepEqual(Object.keys(lite), Object.keys(SPRINT_PLANNER_AGENT_CONFIGURATIONS.default), "lite covers every agent");
+	for (const [key, entry] of Object.entries(lite)) {
+		if (key === "implementationWorker") {
+			assert.deepEqual(entry.model, { provider: "deepseek", model: "deepseek-v4-flash", thinking: "max" }, `${key} should be DeepSeek flash max`);
+		} else {
+			assert.deepEqual(entry.model, { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" }, `${key} should be DeepSeek pro max`);
+		}
+	}
+	// Senior-call metadata is preserved.
+	assert.equal(lite.planner.maxSeniorCalls, 2);
+	assert.equal(lite.planner.seniorAdvisor, "advisor");
+	assert.equal(lite.decompositionReviewer.maxSeniorCalls, 1);
+	assert.equal(lite.decompositionReviewer.seniorAdvisor, "advisor");
 });
 
 test("plan validation enforces a flat concepts plus orchestration plus contiguous phases publication", () => {
@@ -444,21 +488,29 @@ test("standalone planning workflows publish their contracted outputs without run
 	assert.equal(await entryExists(path.join(internal, ".state.json")), false);
 });
 
-test("standalone ironout and advance planning enforce their exact engine model routes", async () => {
+test("standalone ironout and advance planning resolve their exact agent assignments", async () => {
 	const { root, internal } = await project();
 	const ironoutRunner = new FakeRunner();
 	await new SprintPlannerEngine(ironoutRunner).runStandaloneIronout({ projectRoot: root, internalDevPath: internal, id: "routed-handoff", directive: "Settle", interactive: false });
-	assert.deepEqual(ironoutRunner.requests.find((request) => request.role === "ironout author")?.model, MODEL_ROUTES.ironoutAuthor);
-	assert.deepEqual(ironoutRunner.requests.find((request) => request.role === "corrective ironout reviewer")?.model, MODEL_ROUTES.ironoutReviewer);
+	assert.deepEqual(ironoutRunner.requests.find((request) => request.role === "ironout author")?.model, SPRINT_PLANNER_AGENT_CONFIGURATIONS.default.ironoutAuthor.model);
+	assert.deepEqual(ironoutRunner.requests.find((request) => request.role === "corrective ironout reviewer")?.model, SPRINT_PLANNER_AGENT_CONFIGURATIONS.default.ironoutReviewer.model);
 
 	const planningRunner = new FakeRunner();
 	await new SprintPlannerEngine(planningRunner).runStandaloneAdvancePlan({ projectRoot: root, internalDevPath: internal, id: "routed-plan", directive: "Plan" });
+	const agents = SPRINT_PLANNER_AGENT_CONFIGURATIONS.default;
 	const planner = planningRunner.requests.find((request) => request.role === "advanced planner")!;
-	assert.deepEqual(planner.model, MODEL_ROUTES.advancedPlanner);
-	assert.deepEqual(planner.seniorModel, MODEL_ROUTES.advancedAdvisor);
-	const reviews = planningRunner.requests.filter((request) => request.role === "advanced concepts reviewer" || request.role === "advanced orchestration reviewer" || request.role.startsWith("advanced phase reviewer:"));
-	assert.equal(reviews.length, 4);
-	assert.equal(reviews.every((request) => JSON.stringify(request.model) === JSON.stringify(MODEL_ROUTES.advancedReviewer)), true);
+	assert.deepEqual(planner.model, agents.planner.model);
+	assert.equal(planner.maxSeniorCalls, agents.planner.maxSeniorCalls);
+	assert.deepEqual(planner.seniorModel, agents.advisor.model);
+	const decomposition = planningRunner.requests.find((request) => request.role === "advanced decomposition reviewer")!;
+	assert.deepEqual(decomposition.model, agents.decompositionReviewer.model);
+	assert.equal(decomposition.maxSeniorCalls, agents.decompositionReviewer.maxSeniorCalls);
+	assert.deepEqual(decomposition.seniorModel, agents.advisor.model);
+	assert.deepEqual(planningRunner.requests.find((request) => request.role === "advanced concepts reviewer")?.model, agents.conceptsReviewer.model);
+	assert.deepEqual(planningRunner.requests.find((request) => request.role === "advanced orchestration reviewer")?.model, agents.orchestrationReviewer.model);
+	const phaseReviews = planningRunner.requests.filter((request) => request.role.startsWith("advanced phase reviewer:"));
+	assert.equal(phaseReviews.length, 2);
+	assert.equal(phaseReviews.every((request) => JSON.stringify(request.model) === JSON.stringify(agents.phaseReviewer.model)), true);
 });
 
 // ── Skill contract infrastructure ────────────────────────────────────────
@@ -570,9 +622,8 @@ function assertOrchestrateSkillContract(content: string): void {
 
 	must("Fixed model contract", /Implementation[\s\S]*`provider`: `deepseek`[\s\S]*`model`: `deepseek-v4-pro`[\s\S]*`thinkingLevel`: `max`/, "exact DeepSeek tuple");
 	must("Fixed model contract", /Post-phase review-and-repair and final integration[\s\S]*`provider`: `openai-codex`[\s\S]*`model`: `gpt-5\.6-terra`[\s\S]*`thinkingLevel`: `high`/, "exact GPT tuple");
-	must("Fixed model contract", /Never inherit, omit, downgrade, clamp, or substitute either tuple/i, "tuple substitution prohibition");
+	must("Fixed model contract", /Never inherit, omit, downgrade, clamp, or substitute any tuple/i, "tuple substitution prohibition");
 	must("Fixed model contract", /unavailable, stop before implementation and report the exact failure/i, "unavailable tuple blocks implementation");
-	must("Fixed model contract", /do not replace GPT-5\.6 Terra with another GPT version/i, "no GPT version substitution");
 	must("Fixed model contract", /self-reports.*root inspection.*test output do not replace independent GPT-5\.6 Terra high phase validation/is, "independent validation");
 
 	must("Global estimate prohibition", /Every root report and every delegated report/i, "all root and delegated reports covered");
@@ -756,6 +807,10 @@ test("package installs the orchestrate skill and exposes the complete agent-call
 
 	const extension = await readFile(path.join(packageRoot, "index.ts"), "utf8");
 	assert.doesNotMatch(extension, /registerCommand\(["']orchestrate["']/);
+	assert.match(extension, /const currentAgentConfiguration = loadDefaultSprintPlannerAgentConfiguration\(\);/);
+	assert.match(extension, /currentAgentConfiguration\);/);
+	const defaultConfiguration = await readFile(path.join(packageRoot, "configs", "default.ts"), "utf8");
+	assert.match(defaultConfiguration, /satisfies SprintPlannerAgentConfiguration/);
 	assert.match(extension, /\["ironout", "advanceplan"\]/);
 	for (const [tool, method] of [
 		["sprint_brainstorm", "runStandaloneBrainstorm"],
@@ -2164,21 +2219,22 @@ test("validatePlanDirectory hardened inspection rejects missing root", async () 
 });
 
 test("ThinkingLevel type contains each level exactly once", () => {
-	// Compile-time check: verify the type is correct by checking MODEL_ROUTES
-	const levels = new Set(Object.values(MODEL_ROUTES).map((r) => r.thinking));
+	// Compile-time check: verify the type is correct by checking the agent configuration
+	const levels = new Set(Object.values(SPRINT_PLANNER_AGENT_CONFIGURATIONS.default).map((a) => a.model.thinking));
 	assert.ok(levels.has("off") === false); // not used but exists in type
 	assert.ok(levels.has("minimal") === false);
 	assert.ok(levels.has("low") === false);
 	assert.ok(levels.has("medium") === false); // not used but exists in type
 	assert.ok(levels.has("high"));
-	assert.ok(levels.has("xhigh") === false); // not used but exists in type
+	assert.ok(levels.has("xhigh"));
 	assert.ok(levels.has("max"));
-	// Verify MODEL_ROUTES.advancedReviewer uses high
-	assert.equal(MODEL_ROUTES.advancedReviewer.thinking, "high");
+	// Verify assignments that use higher reasoning levels.
+	assert.equal(SPRINT_PLANNER_AGENT_CONFIGURATIONS.default.phaseReviewer.model.thinking, "high");
+	assert.equal(SPRINT_PLANNER_AGENT_CONFIGURATIONS.default.executionAdvisor.model.thinking, "xhigh");
 	// Verify no duplicate medium in union by checking all values are valid
-	for (const route of Object.values(MODEL_ROUTES)) {
+	for (const entry of Object.values(SPRINT_PLANNER_AGENT_CONFIGURATIONS.default)) {
 		const valid: string[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
-		assert.ok(valid.includes(route.thinking), `Invalid thinking level: ${route.thinking}`);
+		assert.ok(valid.includes(entry.model.thinking), `Invalid thinking level: ${entry.model.thinking}`);
 	}
 });
 

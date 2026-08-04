@@ -16,6 +16,7 @@ import {
 	inspectLease,
 	inspectPlanDirectory,
 	interruptActiveRecord,
+	loadDefaultSprintPlannerAgentConfiguration,
 	parseCommand,
 	commandUsage,
 	resolveRunDirectory,
@@ -134,6 +135,8 @@ export default function sprintPlannerExtension(pi: ExtensionAPI) {
 	const standalone = new Map<WorkflowName, ActiveJob>();
 	const executionRecords = new Map<string, ExecutionRecordHandle>();
 	let bound: Binding | undefined;
+	// This load-time snapshot is fixed to configs/default.ts until configuration selection is introduced.
+	const currentAgentConfiguration = loadDefaultSprintPlannerAgentConfiguration();
 
 	function updateFooter(progress?: EngineProgress) {
 		try {
@@ -152,7 +155,7 @@ export default function sprintPlannerExtension(pi: ExtensionAPI) {
 	}
 
 	function makeEngine(workflow: WorkflowName, runId: string) {
-		return new SprintPlannerEngine(new PiWorkflowRunner({ events: pi.events }), callbacks(workflow, runId));
+		return new SprintPlannerEngine(new PiWorkflowRunner({ events: pi.events }), callbacks(workflow, runId), currentAgentConfiguration);
 	}
 
 	function appendBinding(binding: Binding) {
@@ -445,7 +448,7 @@ export default function sprintPlannerExtension(pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "sprint_ironout",
 		label: "Run sprint ironout",
-		description: "Run the engine-owned autonomous ironout author and corrective reviewer for an input artifact. The engine selects MODEL_ROUTES.ironoutAuthor and MODEL_ROUTES.ironoutReviewer; callers cannot supply models.",
+		description: "Run the engine-owned autonomous ironout author and corrective reviewer for an input artifact. The engine resolves every agent from its agent configuration; callers cannot supply models.",
 		promptSnippet: "Turn a brainstorm artifact into a corrected handoff using engine-owned model routes",
 		promptGuidelines: ["Use sprint_ironout after sprint_brainstorm instead of manually selecting ironout author or reviewer models."],
 		parameters: Type.Object(
@@ -487,8 +490,8 @@ export default function sprintPlannerExtension(pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "sprint_advanceplan",
 		label: "Run sprint advance plan",
-		description: "Run the engine-owned advanced plan author, concept review, orchestration review, and phase reviews for a handoff artifact. The engine selects MODEL_ROUTES.advancedPlanner, MODEL_ROUTES.advancedAdvisor, and MODEL_ROUTES.advancedReviewer; callers cannot supply models.",
-		promptSnippet: "Turn a corrected handoff into a fully reviewed phased plan using engine-owned model routes",
+		description: "Run the engine-owned advanced plan author, concept review, orchestration review, and phase reviews for a handoff artifact. The engine resolves every agent from its default advanced-planning configuration; callers cannot supply models.",
+		promptSnippet: "Turn a corrected handoff into a fully reviewed phased plan using the engine's agent configuration",
 		promptGuidelines: ["Use sprint_advanceplan after sprint_ironout instead of manually selecting advanced planning or review models."],
 		parameters: Type.Object(
 			{

@@ -54,12 +54,13 @@ import {
 	validateSubmission,
 	validateSynthesisCoverage,
 } from "./validation.ts";
+import { loadDefaultSprintPlannerAgentConfiguration } from "./configs/index.ts";
 import {
 	DEFAULT_BRAINSTORM_AGENTS,
 	MAX_STEP_ATTEMPTS,
-	MODEL_ROUTES,
 	ORCHESTRATION_HEADINGS,
 	SPRINT_STATE_VERSION,
+	type SprintPlannerAgentConfiguration,
 	type ArtifactRecord,
 	type BrainstormRole,
 	type EngineCallbacks,
@@ -89,6 +90,10 @@ interface SprintBrainstormResult {
 interface CorrectedPlanResult {
 	files: SubmittedFile[];
 	reviewSummary: string;
+}
+
+function seniorAdvisorModel(configuration: SprintPlannerAgentConfiguration, assignment: SprintPlannerAgentConfiguration[keyof SprintPlannerAgentConfiguration]): ModelTuple | undefined {
+	return assignment.seniorAdvisor ? configuration[assignment.seniorAdvisor].model : undefined;
 }
 
 type OwnedPublication = OwnedFilePublication | OwnedDirectoryPublication;
@@ -343,6 +348,7 @@ function planNames(files: readonly SubmittedFile[]): string[] {
 export class SprintPlannerEngine {
 	readonly runner: WorkflowRunner;
 	readonly callbacks: EngineCallbacks;
+	readonly agentConfiguration: SprintPlannerAgentConfiguration;
 	#controller?: AbortController;
 	#state?: SprintState;
 	#stateStore?: SprintStateStore;
@@ -361,9 +367,10 @@ export class SprintPlannerEngine {
 	#resolveSettled?: () => void;
 	#rejectSettled?: (error: unknown) => void;
 
-	constructor(runner: WorkflowRunner, callbacks: EngineCallbacks = {}) {
+	constructor(runner: WorkflowRunner, callbacks: EngineCallbacks = {}, agentConfiguration: SprintPlannerAgentConfiguration = loadDefaultSprintPlannerAgentConfiguration()) {
 		this.runner = runner;
 		this.callbacks = callbacks;
+		this.agentConfiguration = agentConfiguration;
 	}
 
 	get progress(): EngineProgress | undefined {
@@ -892,10 +899,11 @@ export class SprintPlannerEngine {
 
 	async #sprintBrainstorm(directive: string, count: number) {
 		const store = this.#artifactStore!;
+		const agents = this.agentConfiguration;
 		const rolesSubmission = await this.#step(
 			"brainstorm-route",
 			"brainstorm",
-			MODEL_ROUTES.roleRouter,
+			agents.roleRouter.model,
 			{ role: "brainstorm role router", mode: "planning", prompt: routeRolesPrompt(directive, count), contextPaths: ["input.md"], expectation: { kind: "roles" } },
 			(submission) => { validateRoles(submission.content, count); },
 			async (submission) => [await store.write("brainstorm/roles.json", submission.content!)],
@@ -907,7 +915,7 @@ export class SprintPlannerEngine {
 			this.#step(
 				`brainstorm-findings-${role.id}`,
 				"brainstorm",
-				MODEL_ROUTES.brainstormWorker,
+				agents.brainstormWorker.model,
 				{ role: `brainstorm worker: ${role.name}`, mode: "planning", prompt: brainstormPrompt(directive, role), contextPaths: ["input.md"], expectation: markdownExpectation(BRAINSTORM_HEADINGS) },
 				() => {},
 				async (submission) => [await store.write(`brainstorm/${role.id}/findings.md`, submission.content!)],
@@ -925,12 +933,12 @@ export class SprintPlannerEngine {
 			const others = findings.filter((item) => item.path !== `brainstorm/${role.id}/findings.md`);
 			const crossId = `brainstorm-cross-${role.id}`;
 			if (!this.#state!.steps[crossId] && this.#state!.steps[stepId]?.sessionPath) {
-				this.#state!.steps[crossId] = { id: crossId, stage: "brainstorm", status: "pending", attempts: 0, model: { ...MODEL_ROUTES.brainstormWorker }, artifacts: [], sessionPath: this.#state!.steps[stepId].sessionPath, updatedAt: now() };
+				this.#state!.steps[crossId] = { id: crossId, stage: "brainstorm", status: "pending", attempts: 0, model: { ...agents.brainstormWorker.model }, artifacts: [], sessionPath: this.#state!.steps[stepId].sessionPath, updatedAt: now() };
 			}
 			return this.#step(
 				crossId,
 				"brainstorm",
-				MODEL_ROUTES.brainstormWorker,
+				agents.brainstormWorker.model,
 				{ role: `cross-review worker: ${role.name}`, mode: "planning", prompt: crossReviewPrompt(role, others), contextPaths: others.map((item) => item.path), expectation: markdownExpectation(BRAINSTORM_HEADINGS) },
 				() => {},
 				async (submission) => [await store.write(`brainstorm/${role.id}/cross-review.md`, submission.content!)],
@@ -946,7 +954,7 @@ export class SprintPlannerEngine {
 		await this.#step(
 			"brainstorm-synthesis",
 			"brainstorm",
-			MODEL_ROUTES.brainstormSynthesis,
+			agents.brainstormSynthesis.model,
 			{ role: "brainstorm synthesizer", mode: "planning", prompt: synthesisPrompt(directive, reports), contextPaths: reports.map((item) => item.path), expectation: markdownExpectation(BRAINSTORM_HEADINGS) },
 			(submission) => { validateSynthesisCoverage(submission.content!, allReportPaths); },
 			async (submission) => [await store.write("brainstorm/synthesis.md", submission.content!)],
@@ -956,7 +964,7 @@ export class SprintPlannerEngine {
 		await this.#step(
 			"brainstorm-red-team",
 			"brainstorm",
-			MODEL_ROUTES.brainstormRedTeam,
+			agents.brainstormRedTeam.model,
 			{ role: "brainstorm red team", mode: "planning", prompt: redTeamPrompt(synthesis), contextPaths: ["brainstorm/synthesis.md"], expectation: markdownExpectation(BRAINSTORM_HEADINGS) },
 			() => {},
 			async (submission) => [await store.write("brainstorm/red-team.md", submission.content!)],
@@ -966,11 +974,12 @@ export class SprintPlannerEngine {
 
 	async #sprintIronout(brainstorm: SprintBrainstormResult) {
 		const store = this.#artifactStore!;
+		const agents = this.agentConfiguration;
 		const reportPaths = brainstorm.reports.map((item) => item.path);
 		await this.#step(
 			"ironout-author",
 			"ironout",
-			MODEL_ROUTES.ironoutAuthor,
+			agents.ironoutAuthor.model,
 			{
 				role: "autonomous ironout author", mode: "planning",
 				prompt: ironoutPrompt(
@@ -990,7 +999,7 @@ export class SprintPlannerEngine {
 		await this.#step(
 			"ironout-review",
 			"ironout",
-			MODEL_ROUTES.ironoutReviewer,
+			agents.ironoutReviewer.model,
 			{ role: "corrective ironout reviewer", mode: "planning", prompt: ironoutReviewPrompt(draft), contextPaths: ["ironout/draft.md"], expectation: { kind: "files", allowedPaths: ["review.md", "handoff.md"], requiredPaths: ["review.md", "handoff.md"], minFiles: 2, maxFiles: 2, headings: { "review.md": REVIEW_HEADINGS, "handoff.md": HANDOFF_HEADINGS } } },
 			(submission) => { validateHandoff(filesByPath(submission).get("handoff.md")!); },
 			async (submission) => {
@@ -1008,11 +1017,12 @@ export class SprintPlannerEngine {
 
 	async #sprintPlan(handoff: string): Promise<CorrectedPlanResult> {
 		const store = this.#artifactStore!;
+		const agents = this.agentConfiguration;
 		const draftSubmission = await this.#step(
 			"planning-author",
 			"planning",
-			MODEL_ROUTES.advancedPlanner,
-			{ role: "advanced planner", mode: "planning", prompt: advancedPlanPrompt(handoff), contextPaths: ["ironout/handoff.md"], expectation: { kind: "files", minFiles: 4, maxFiles: 22 }, maxSeniorCalls: 2, seniorModel: MODEL_ROUTES.advancedAdvisor },
+			agents.planner.model,
+			{ role: "advanced planner", mode: "planning", prompt: advancedPlanPrompt(handoff), contextPaths: ["ironout/handoff.md"], expectation: { kind: "files", minFiles: 4, maxFiles: 22 }, maxSeniorCalls: agents.planner.maxSeniorCalls, seniorModel: seniorAdvisorModel(agents, agents.planner) },
 			(submission) => { validateDraftPlanShape(submission.files!); },
 			async (submission) => Promise.all(submission.files!.map((file) => store.write(`planning-draft/${file.path}`, file.content))),
 		);
@@ -1024,8 +1034,8 @@ export class SprintPlannerEngine {
 		await this.#step(
 			"planning-decomposition",
 			"planning",
-			MODEL_ROUTES.advancedReviewer,
-			{ role: "advanced decomposition reviewer", mode: "planning", prompt: advancedDecompositionReviewPrompt(handoff, draftFiles), contextPaths: ["ironout/handoff.md", ...draftFiles.map((f) => `planning-draft/${f.path}`)], expectation: { kind: "files", minFiles: 5, maxFiles: 23 }, maxSeniorCalls: 1, seniorModel: MODEL_ROUTES.advancedAdvisor },
+			agents.decompositionReviewer.model,
+			{ role: "advanced decomposition reviewer", mode: "planning", prompt: advancedDecompositionReviewPrompt(handoff, draftFiles), contextPaths: ["ironout/handoff.md", ...draftFiles.map((f) => `planning-draft/${f.path}`)], expectation: { kind: "files", minFiles: 5, maxFiles: 23 }, maxSeniorCalls: agents.decompositionReviewer.maxSeniorCalls, seniorModel: seniorAdvisorModel(agents, agents.decompositionReviewer) },
 			(submission) => {
 				const review = submission.files!.filter((file) => file.path === "review.md");
 				if (review.length !== 1) throw new Error("Decomposition review must submit exactly one review.md.");
@@ -1076,7 +1086,7 @@ export class SprintPlannerEngine {
 		await this.#step(
 			"planning-review-concepts",
 			"planning",
-			MODEL_ROUTES.advancedReviewer,
+			agents.conceptsReviewer.model,
 			{ role: "advanced concepts reviewer", mode: "planning", prompt: advancedConceptReviewPrompt(handoff, baseConcepts, phasePaths), contextPaths: ["ironout/handoff.md", "planning-corrected/concepts.md"], expectation: { kind: "files", allowedPaths: ["review.md", "concepts.md"], requiredPaths: ["review.md", "concepts.md"], minFiles: 2, maxFiles: 2, headings: { "review.md": REVIEW_HEADINGS, "concepts.md": CONCEPT_HEADINGS } } },
 			(submission) => { validateConcept(filesByPath(submission).get("concepts.md")!); },
 			async (submission) => {
@@ -1093,7 +1103,7 @@ export class SprintPlannerEngine {
 		await this.#step(
 			"planning-review-orchestration",
 			"planning",
-			MODEL_ROUTES.advancedReviewer,
+			agents.orchestrationReviewer.model,
 			{ role: "advanced orchestration reviewer", mode: "planning", prompt: advancedOrchestrationReviewPrompt(handoff, correctedConceptsFile, baseOrchestration, phasePaths), contextPaths: ["ironout/handoff.md", "planning-review-draft/concepts.md", "planning-corrected/orchestration.md"], expectation: { kind: "files", allowedPaths: ["review.md", "orchestration.md"], requiredPaths: ["review.md", "orchestration.md"], minFiles: 2, maxFiles: 2, headings: { "review.md": REVIEW_HEADINGS, "orchestration.md": ORCHESTRATION_HEADINGS } } },
 			(submission) => {
 				const map = filesByPath(submission);
@@ -1116,7 +1126,7 @@ export class SprintPlannerEngine {
 			return this.#step(
 				`planning-review-${phasePath.replace(/\.md$/, "")}`,
 				"planning",
-				MODEL_ROUTES.advancedReviewer,
+				agents.phaseReviewer.model,
 				{ role: `advanced phase reviewer: ${phasePath}`, mode: "planning", prompt: advancedPhaseReviewPrompt(correctedConceptsFile, correctedOrchestrationFile, phase, phasePaths), contextPaths: ["planning-review-draft/concepts.md", "planning-review-draft/orchestration.md", `planning-corrected/${phasePath}`], expectation: { kind: "files", allowedPaths: ["review.md", phasePath], requiredPaths: ["review.md", phasePath], minFiles: 2, maxFiles: 2, headings: { "review.md": REVIEW_HEADINGS, [phasePath]: PHASE_HEADINGS } } },
 				(submission) => {
 					const map = filesByPath(submission);
@@ -1317,16 +1327,17 @@ export class SprintPlannerEngine {
 
 	async runStandaloneBrainstorm(options: StandaloneRunOptions): Promise<string> {
 		this.#startStandalone("brainstorm", options);
+		const agents = this.agentConfiguration;
 		const parent = resolve(options.internalDevPath, "brainstorm");
 		const staging = await createStandaloneStaging(parent, options.id);
 		const count = normalizeAgents(options.agents);
-		const rolesResult = await this.#standaloneCall(this.#request(options, { id: `${options.id}-route`, role: "brainstorm role router", model: MODEL_ROUTES.roleRouter, mode: "planning", prompt: routeRolesPrompt(options.directive, count), contextPaths: [], expectation: { kind: "roles" } }));
+		const rolesResult = await this.#standaloneCall(this.#request(options, { id: `${options.id}-route`, role: "brainstorm role router", model: agents.roleRouter.model, mode: "planning", prompt: routeRolesPrompt(options.directive, count), contextPaths: [], expectation: { kind: "roles" } }));
 		await staging.write("roles.json", rolesResult.content!);
 		const roles = validateRoles(rolesResult.content, count);
 
 		// Scoped fan-out for standalone findings.
 		const findingFactories = roles.map((role) => (signal: AbortSignal) =>
-			this.#standaloneCall(this.#request(options, { id: `${options.id}-findings-${role.id}`, role: role.name, model: MODEL_ROUTES.brainstormWorker, mode: "planning", prompt: brainstormPrompt(options.directive, role), contextPaths: [], expectation: markdownExpectation(BRAINSTORM_HEADINGS), sessionPath: `memory:${options.id}:${role.id}` }), undefined, signal),
+			this.#standaloneCall(this.#request(options, { id: `${options.id}-findings-${role.id}`, role: role.name, model: agents.brainstormWorker.model, mode: "planning", prompt: brainstormPrompt(options.directive, role), contextPaths: [], expectation: markdownExpectation(BRAINSTORM_HEADINGS), sessionPath: `memory:${options.id}:${role.id}` }), undefined, signal),
 		);
 		const findings = await scopedFanOut(findingFactories, this.#controller!.signal, "standalone-findings");
 		const findingReports = findings.map((submission, index) => ({ path: `${roles[index].id}/findings.md`, content: submission.content! }));
@@ -1340,7 +1351,7 @@ export class SprintPlannerEngine {
 
 		// Scoped fan-out for standalone cross-reviews.
 		const crossFactories = roles.map((role) => (signal: AbortSignal) =>
-			this.#standaloneCall(this.#request(options, { id: `${options.id}-cross-${role.id}`, role: `${role.name} cross reviewer`, model: MODEL_ROUTES.brainstormWorker, mode: "planning", prompt: crossReviewPrompt(role, findingReports.filter((item) => item.path !== `${role.id}/findings.md`)), contextPaths: findingReports.filter((item) => item.path !== `${role.id}/findings.md`).map((item) => item.path), expectation: markdownExpectation(BRAINSTORM_HEADINGS), sessionPath: `memory:${options.id}:${role.id}` }), undefined, signal),
+			this.#standaloneCall(this.#request(options, { id: `${options.id}-cross-${role.id}`, role: `${role.name} cross reviewer`, model: agents.brainstormWorker.model, mode: "planning", prompt: crossReviewPrompt(role, findingReports.filter((item) => item.path !== `${role.id}/findings.md`)), contextPaths: findingReports.filter((item) => item.path !== `${role.id}/findings.md`).map((item) => item.path), expectation: markdownExpectation(BRAINSTORM_HEADINGS), sessionPath: `memory:${options.id}:${role.id}` }), undefined, signal),
 		);
 		const crosses = await scopedFanOut(crossFactories, this.#controller!.signal, "standalone-cross-reviews");
 
@@ -1348,7 +1359,7 @@ export class SprintPlannerEngine {
 		await writeStagedFiles(staging, "", crossReports);
 		const allReports = [...findingReports, ...crossReports];
 		const allReportPaths = allReports.map((item) => item.path);
-		const synthesis = await this.#standaloneCall(this.#request(options, { id: `${options.id}-synthesis`, role: "brainstorm synthesizer", model: MODEL_ROUTES.brainstormSynthesis, mode: "planning", prompt: synthesisPrompt(options.directive, allReports), contextPaths: allReports.map((item) => item.path), expectation: markdownExpectation(BRAINSTORM_HEADINGS) }));
+		const synthesis = await this.#standaloneCall(this.#request(options, { id: `${options.id}-synthesis`, role: "brainstorm synthesizer", model: agents.brainstormSynthesis.model, mode: "planning", prompt: synthesisPrompt(options.directive, allReports), contextPaths: allReports.map((item) => item.path), expectation: markdownExpectation(BRAINSTORM_HEADINGS) }));
 		await staging.write("synthesis.md", synthesis.content!);
 		try {
 			validateSynthesisCoverage(synthesis.content!, allReportPaths);
@@ -1356,7 +1367,7 @@ export class SprintPlannerEngine {
 			this.#reportStandaloneValidationFailure(error, staging.runDirectory);
 			throw error;
 		}
-		const redTeam = await this.#standaloneCall(this.#request(options, { id: `${options.id}-red-team`, role: "brainstorm red team", model: MODEL_ROUTES.brainstormRedTeam, mode: "planning", prompt: redTeamPrompt(synthesis.content!), contextPaths: ["synthesis.md"], expectation: markdownExpectation(BRAINSTORM_HEADINGS) }));
+		const redTeam = await this.#standaloneCall(this.#request(options, { id: `${options.id}-red-team`, role: "brainstorm red team", model: agents.brainstormRedTeam.model, mode: "planning", prompt: redTeamPrompt(synthesis.content!), contextPaths: ["synthesis.md"], expectation: markdownExpectation(BRAINSTORM_HEADINGS) }));
 		await staging.write("red-team.md", redTeam.content!);
 		const finalPaths = [...allReportPaths, "synthesis.md", "red-team.md"];
 		const publication = await publishDirectoryExclusively(parent, options.id, await readStagedFiles(staging, "", finalPaths));
@@ -1371,15 +1382,16 @@ export class SprintPlannerEngine {
 
 	async runStandaloneIronout(options: StandaloneRunOptions): Promise<string> {
 		this.#startStandalone("ironout", options);
+		const agents = this.agentConfiguration;
 		const parent = resolve(options.internalDevPath, "handoffs");
 		const staging = await createStandaloneStaging(parent, options.id);
 		const draft = await this.#standaloneCall(
-			this.#request(options, { id: `${options.id}-author`, role: "ironout author", model: MODEL_ROUTES.ironoutAuthor, mode: "planning", prompt: ironoutPrompt(options.directive, [], options.interactive !== false), contextPaths: [], expectation: markdownExpectation(HANDOFF_HEADINGS), allowQuestions: options.interactive !== false, maxQuestionRounds: 3 }),
+			this.#request(options, { id: `${options.id}-author`, role: "ironout author", model: agents.ironoutAuthor.model, mode: "planning", prompt: ironoutPrompt(options.directive, [], options.interactive !== false), contextPaths: [], expectation: markdownExpectation(HANDOFF_HEADINGS), allowQuestions: options.interactive !== false, maxQuestionRounds: 3 }),
 			(submission) => validateHandoff(submission.content!),
 		);
 		await staging.write("draft.md", draft.content!);
 		const reviewed = await this.#standaloneCall(
-			this.#request(options, { id: `${options.id}-review`, role: "corrective ironout reviewer", model: MODEL_ROUTES.ironoutReviewer, mode: "planning", prompt: ironoutReviewPrompt(draft.content!), contextPaths: [], expectation: { kind: "files", allowedPaths: ["review.md", "handoff.md"], requiredPaths: ["review.md", "handoff.md"], minFiles: 2, maxFiles: 2, headings: { "review.md": REVIEW_HEADINGS, "handoff.md": HANDOFF_HEADINGS } } }),
+			this.#request(options, { id: `${options.id}-review`, role: "corrective ironout reviewer", model: agents.ironoutReviewer.model, mode: "planning", prompt: ironoutReviewPrompt(draft.content!), contextPaths: [], expectation: { kind: "files", allowedPaths: ["review.md", "handoff.md"], requiredPaths: ["review.md", "handoff.md"], minFiles: 2, maxFiles: 2, headings: { "review.md": REVIEW_HEADINGS, "handoff.md": HANDOFF_HEADINGS } } }),
 			(submission) => validateHandoff(filesByPath(submission).get("handoff.md")!),
 		);
 		await writeStagedFiles(staging, "", reviewed.files!);
@@ -1405,15 +1417,16 @@ export class SprintPlannerEngine {
 		this.#startStandalone("advanceplan", options);
 		const plansParent = resolve(options.internalDevPath, "plans");
 		const staging = await createStandaloneStaging(plansParent, options.id);
+		const agents = this.agentConfiguration;
 		const draft = await this.#standaloneCall(
-			this.#request(options, { id: `${options.id}-plan`, role: "advanced planner", model: MODEL_ROUTES.advancedPlanner, mode: "planning", prompt: advancedPlanPrompt(options.directive), contextPaths: [], expectation: { kind: "files", minFiles: 4, maxFiles: 22 }, maxSeniorCalls: 2, seniorModel: MODEL_ROUTES.advancedAdvisor }),
+			this.#request(options, { id: `${options.id}-plan`, role: "advanced planner", model: agents.planner.model, mode: "planning", prompt: advancedPlanPrompt(options.directive), contextPaths: [], expectation: { kind: "files", minFiles: 4, maxFiles: 22 }, maxSeniorCalls: agents.planner.maxSeniorCalls, seniorModel: seniorAdvisorModel(agents, agents.planner) }),
 			(submission) => validateDraftPlanShape(submission.files!),
 		);
 		await writeStagedFiles(staging, "planning-draft", draft.files!);
 
 		// ── Decomposition correction gate ──
 		const decomp = await this.#standaloneCall(
-			this.#request(options, { id: `${options.id}-review-decomposition`, role: "advanced decomposition reviewer", model: MODEL_ROUTES.advancedReviewer, mode: "planning", prompt: advancedDecompositionReviewPrompt(options.directive, draft.files!), contextPaths: [], expectation: { kind: "files", minFiles: 5, maxFiles: 23 }, maxSeniorCalls: 1, seniorModel: MODEL_ROUTES.advancedAdvisor }),
+			this.#request(options, { id: `${options.id}-review-decomposition`, role: "advanced decomposition reviewer", model: agents.decompositionReviewer.model, mode: "planning", prompt: advancedDecompositionReviewPrompt(options.directive, draft.files!), contextPaths: [], expectation: { kind: "files", minFiles: 5, maxFiles: 23 }, maxSeniorCalls: agents.decompositionReviewer.maxSeniorCalls, seniorModel: seniorAdvisorModel(agents, agents.decompositionReviewer) }),
 			(submission) => {
 				const review = submission.files!.filter((file) => file.path === "review.md");
 				if (review.length !== 1) throw new Error("Decomposition review must submit exactly one review.md.");
@@ -1433,7 +1446,7 @@ export class SprintPlannerEngine {
 
 		// Concepts review.
 		const conceptReview = await this.#standaloneCall(
-			this.#request(options, { id: `${options.id}-review-concepts`, role: "advanced concepts reviewer", model: MODEL_ROUTES.advancedReviewer, mode: "planning", prompt: advancedConceptReviewPrompt(options.directive, baseConcepts, phasePaths), contextPaths: ["concepts.md"], expectation: { kind: "files", allowedPaths: ["review.md", "concepts.md"], requiredPaths: ["review.md", "concepts.md"], minFiles: 2, maxFiles: 2, headings: { "review.md": REVIEW_HEADINGS, "concepts.md": CONCEPT_HEADINGS } } }),
+			this.#request(options, { id: `${options.id}-review-concepts`, role: "advanced concepts reviewer", model: agents.conceptsReviewer.model, mode: "planning", prompt: advancedConceptReviewPrompt(options.directive, baseConcepts, phasePaths), contextPaths: ["concepts.md"], expectation: { kind: "files", allowedPaths: ["review.md", "concepts.md"], requiredPaths: ["review.md", "concepts.md"], minFiles: 2, maxFiles: 2, headings: { "review.md": REVIEW_HEADINGS, "concepts.md": CONCEPT_HEADINGS } } }),
 			(submission) => validateConcept(filesByPath(submission).get("concepts.md")!),
 		);
 		const conceptMap = filesByPath(conceptReview);
@@ -1444,7 +1457,7 @@ export class SprintPlannerEngine {
 
 		// Orchestration review.
 		const orchReview = await this.#standaloneCall(
-			this.#request(options, { id: `${options.id}-review-orchestration`, role: "advanced orchestration reviewer", model: MODEL_ROUTES.advancedReviewer, mode: "planning", prompt: advancedOrchestrationReviewPrompt(options.directive, correctedConcepts, baseOrchestration, phasePaths), contextPaths: ["concepts.md", "orchestration.md"], expectation: { kind: "files", allowedPaths: ["review.md", "orchestration.md"], requiredPaths: ["review.md", "orchestration.md"], minFiles: 2, maxFiles: 2, headings: { "review.md": REVIEW_HEADINGS, "orchestration.md": ORCHESTRATION_HEADINGS } } }),
+			this.#request(options, { id: `${options.id}-review-orchestration`, role: "advanced orchestration reviewer", model: agents.orchestrationReviewer.model, mode: "planning", prompt: advancedOrchestrationReviewPrompt(options.directive, correctedConcepts, baseOrchestration, phasePaths), contextPaths: ["concepts.md", "orchestration.md"], expectation: { kind: "files", allowedPaths: ["review.md", "orchestration.md"], requiredPaths: ["review.md", "orchestration.md"], minFiles: 2, maxFiles: 2, headings: { "review.md": REVIEW_HEADINGS, "orchestration.md": ORCHESTRATION_HEADINGS } } }),
 			(submission) => validateOrchestration(filesByPath(submission).get("orchestration.md")!, phasePaths),
 		);
 		const orchMap = filesByPath(orchReview);
@@ -1457,7 +1470,7 @@ export class SprintPlannerEngine {
 		const phaseFactories = phasePaths.map((phasePath) => (signal: AbortSignal) => {
 			const phase = correctedFiles.find((file) => file.path === phasePath)!;
 			return this.#standaloneCall(
-				this.#request(options, { id: `${options.id}-review-${phasePath.replace(/\.md$/, "")}`, role: `advanced phase reviewer: ${phasePath}`, model: MODEL_ROUTES.advancedReviewer, mode: "planning", prompt: advancedPhaseReviewPrompt(correctedConcepts, correctedOrchestration, phase, phasePaths), contextPaths: ["concepts.md", "orchestration.md", phasePath], expectation: { kind: "files", allowedPaths: ["review.md", phasePath], requiredPaths: ["review.md", phasePath], minFiles: 2, maxFiles: 2, headings: { "review.md": REVIEW_HEADINGS, [phasePath]: PHASE_HEADINGS } } }),
+				this.#request(options, { id: `${options.id}-review-${phasePath.replace(/\.md$/, "")}`, role: `advanced phase reviewer: ${phasePath}`, model: agents.phaseReviewer.model, mode: "planning", prompt: advancedPhaseReviewPrompt(correctedConcepts, correctedOrchestration, phase, phasePaths), contextPaths: ["concepts.md", "orchestration.md", phasePath], expectation: { kind: "files", allowedPaths: ["review.md", phasePath], requiredPaths: ["review.md", phasePath], minFiles: 2, maxFiles: 2, headings: { "review.md": REVIEW_HEADINGS, [phasePath]: PHASE_HEADINGS } } }),
 				(submission) => validatePhase(phasePath, filesByPath(submission).get(phasePath)!, correctedOrchestration.content),
 				signal,
 			);
