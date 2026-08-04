@@ -1,4 +1,8 @@
-import type { BrainstormRole, RetryFeedback } from "./types.ts";
+import type { BrainstormRole, ModelTuple, RetryFeedback } from "./types.ts";
+
+function formatModelTuple(m: ModelTuple): string {
+	return `${m.provider}/${m.model}:${m.thinking}`;
+}
 
 const SUBMIT = "Do not put the artifact only in chat. Submit it through the typed sprint_submit tool exactly once when complete.";
 const INTERPRET_INPUT = "Treat the authoritative input as a user prompt, not as preprocessed file content. It may contain pasted material, one or more project-relative paths, or natural-language instructions around paths. Decide what it means and use your read-only project tools to inspect referenced files or directories when useful.";
@@ -119,7 +123,7 @@ ${handoff}
 ${SUBMIT}`;
 }
 
-export function advancedPlanPrompt(handoff: string): string {
+export function advancedPlanPrompt(handoff: string, implementationModel: ModelTuple, validationModel: ModelTuple): string {
 	return `Convert the handoff into a detailed phased implementation plan that amortizes senior reasoning for implementation workers. Do not edit the project. Do not include time estimates, duration, effort, ETA, or calendar scheduling language. Plans and handoffs describe what to do, not how long it takes. Technical machine semantics such as timeout, TTL, retry, backoff, polling, cache, retention, lease, and complexity notation remain valid.
 
 ${INTERPRET_INPUT}
@@ -166,9 +170,9 @@ Use the headings and machine-readable lines below literally. Do not add prose or
 - **Scope Size**: exactly one \`**Size**: small\`, \`**Size**: medium\`, \`**Size**: large\`, or \`**Size**: extra-large\` line.
 - **Phase Ledger**: exactly one line per phase, in phase order: \`- phase-NN-slug.md | depends: none | targets: path/to/file, other/path | goal: concise goal\`. Replace \`none\` with comma-separated phase filenames when needed. Targets are canonical project-relative write paths without backticks.
 - **Execution Waves**: contiguous lines such as \`- wave-01: phase-01-slug.md\` or \`- wave-02: phase-02-a.md, phase-03-b.md\`. List every phase exactly once. A dependency must be in an earlier wave; phases sharing a wave must have non-overlapping targets and no shared mutable state.
-- **Model Assignments**: exactly these three lines: \`- Implementation: deepseek/deepseek-v4-pro:max\`; \`- Validation: openai-codex/gpt-5.6-terra:high\`; \`- Implementers: exactly one implementation agent per unsplit phase, or one sequential agent per lettered subphase for split phases\`.
+- **Model Assignments**: exactly these three lines: \`- Implementation: ${formatModelTuple(implementationModel)}\`; \`- Validation: ${formatModelTuple(validationModel)}\`; \`- Implementers: exactly one implementation agent per unsplit phase, or one sequential agent per lettered subphase for split phases\`.
 - **Validation Gate**: exactly these two lines: \`- Gate: post-phase validator review-and-repair must PASS before a phase is complete.\` and \`- Dependencies: no dependent phase starts before every dependency has PASS.\`
-- **Final Integration**: exactly \`- Integration: after all phases PASS, run final integration validation with openai-codex/gpt-5.6-terra:high.\`
+- **Final Integration**: exactly \`- Integration: after all phases PASS, run final integration validation with ${formatModelTuple(validationModel)}.\`
 
 ## Phase Headings
 
@@ -198,8 +202,8 @@ ${concepts.content}
 ${SUBMIT}`;
 }
 
-export function advancedOrchestrationReviewPrompt(handoff: string, concepts: { path: string; content: string }, orchestration: { path: string; content: string }, phasePaths: readonly string[]): string {
-	return `Correctively review the advanced-plan orchestration at high. Verify scope-size classification, phase budget, dependency ordering, wave scheduling, model assignments, practical one-session phase sizing, and the review-repair PASS gate against the handoff and corrected concepts. Enforce full production scope: the phase graph must cover the complete requested user scope and must not use mocks, stubs, placeholders, deferred work, partial implementations, bare-minimum shortcuts, or non-production-quality paths as acceptance endpoints. Use planning judgment rather than a formal token calculation: each unsplit phase or lettered subphase should reasonably fit within one agent session under an assumed maximum of roughly 200,000–300,000 tokens; a cohesive phase likely to exceed one implementation agent's context, file/detail load, or focused edit chain should use granular lettered subphases A, B, C, and so on, with phase validation only after every subphase completes. The implementation model is deepseek/deepseek-v4-pro:max with exactly one implementer per unsplit phase (or one sequential agent per lettered subphase for split phases); the validation model is openai-codex/gpt-5.6-terra:high for the mandatory post-phase review-repair PASS gate. No dependent phase starts before its dependencies pass. You may not add, remove, split, or merge phases; the phase set is fixed: ${phasePaths.join(", ")}. Use the planner's exact machine-readable Phase Ledger, Execution Waves, Model Assignments, Validation Gate, and Final Integration line formats without extra prose in those sections. Do not include time estimates, duration, effort, ETA, or calendar scheduling language. Plans and handoffs describe what to do, not how long it takes. Technical machine timeout/TTL/retry/backoff/polling/cache/retention/lease semantics and complexity notation remain valid. Submit exactly review.md with level-two headings Scope, Findings, Risk Assessment, Recommendations, Follow-ups, plus the complete corrected orchestration.md. Do not return a patch and do not edit the project.
+export function advancedOrchestrationReviewPrompt(handoff: string, concepts: { path: string; content: string }, orchestration: { path: string; content: string }, phasePaths: readonly string[], implementationModel: ModelTuple, validationModel: ModelTuple): string {
+	return `Correctively review the advanced-plan orchestration at high. Verify scope-size classification, phase budget, dependency ordering, wave scheduling, model assignments, practical one-session phase sizing, and the review-repair PASS gate against the handoff and corrected concepts. Enforce full production scope: the phase graph must cover the complete requested user scope and must not use mocks, stubs, placeholders, deferred work, partial implementations, bare-minimum shortcuts, or non-production-quality paths as acceptance endpoints. Use planning judgment rather than a formal token calculation: each unsplit phase or lettered subphase should reasonably fit within one agent session under an assumed maximum of roughly 200,000–300,000 tokens; a cohesive phase likely to exceed one implementation agent's context, file/detail load, or focused edit chain should use granular lettered subphases A, B, C, and so on, with phase validation only after every subphase completes. The implementation model is ${formatModelTuple(implementationModel)} with exactly one implementer per unsplit phase (or one sequential agent per lettered subphase for split phases); the validation model is ${formatModelTuple(validationModel)} for the mandatory post-phase review-repair PASS gate. No dependent phase starts before its dependencies pass. You may not add, remove, split, or merge phases; the phase set is fixed: ${phasePaths.join(", ")}. Use the planner's exact machine-readable Phase Ledger, Execution Waves, Model Assignments, Validation Gate, and Final Integration line formats without extra prose in those sections. Do not include time estimates, duration, effort, ETA, or calendar scheduling language. Plans and handoffs describe what to do, not how long it takes. Technical machine timeout/TTL/retry/backoff/polling/cache/retention/lease semantics and complexity notation remain valid. Submit exactly review.md with level-two headings Scope, Findings, Risk Assessment, Recommendations, Follow-ups, plus the complete corrected orchestration.md. Do not return a patch and do not edit the project.
 
 <authoritative-handoff>
 ${handoff}

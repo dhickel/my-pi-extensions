@@ -287,10 +287,13 @@ export function validateOrchestration(content: string, phasePaths: readonly stri
 
 // ── Structured plan inspector ────────────────────────────────────────────
 
-function exactLines(content: string, heading: string, expected: readonly string[]): boolean {
+function exactLines(content: string, heading: string, expected: readonly (string | RegExp)[]): boolean {
 	try {
 		const actual = structuredSectionLines(content, heading);
-		return actual.length === expected.length && actual.every((line, index) => line === expected[index]);
+		return actual.length === expected.length && actual.every((line, index) => {
+			const exp = expected[index];
+			return typeof exp === "string" ? line === exp : exp.test(line);
+		});
 	} catch {
 		return false;
 	}
@@ -556,8 +559,8 @@ export function inspectPlan(files: readonly { path: string; content: string }[])
 
 		// Model assignments, validation gate, integration
 		if (!exactLines(orch.content, "Model Assignments", [
-			"- Implementation: deepseek/deepseek-v4-pro:max",
-			"- Validation: openai-codex/gpt-5.6-terra:high",
+			/^- Implementation: [a-z0-9][a-z0-9-]*\/[a-z0-9][a-z0-9_.-]*:[a-z]+$/,
+			/^- Validation: [a-z0-9][a-z0-9-]*\/[a-z0-9][a-z0-9_.-]*:[a-z]+$/,
 			"- Implementers: exactly one implementation agent per unsplit phase, or one sequential agent per lettered subphase for split phases",
 		])) {
 			push(r, finding("orch-model-assignments", "model-route", "Orchestration Model Assignments section must use the exact structured contract.", "orchestration.md"));
@@ -569,7 +572,7 @@ export function inspectPlan(files: readonly { path: string; content: string }[])
 			push(r, finding("orch-validation-gate", "gate", "Orchestration Validation Gate section must use the exact structured contract.", "orchestration.md"));
 		}
 		if (!exactLines(orch.content, "Final Integration", [
-			"- Integration: after all phases PASS, run final integration validation with openai-codex/gpt-5.6-terra:high.",
+			/^- Integration: after all phases PASS, run final integration validation with [a-z0-9][a-z0-9-]*\/[a-z0-9][a-z0-9_.-]*:[a-z]+\.$/,
 		])) {
 			push(r, finding("orch-integration", "integration", "Orchestration Final Integration section must use the exact structured contract.", "orchestration.md"));
 		}

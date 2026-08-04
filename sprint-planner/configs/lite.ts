@@ -1,7 +1,8 @@
 import { MODEL_PROFILES, type SprintPlannerAgentConfiguration } from "../types.ts";
 
 /**
- * Lite sprint-planner model configuration. Every agent is deepseek-v4-pro:max.
+ * Lite sprint-planner model configuration. Every agent is deepseek-v4-pro:max
+ * except the implementation worker, which is deepseek-v4-pro:high.
  */
 export const liteSprintPlannerAgentConfiguration = {
 	// ── Brainstorm ──
@@ -20,7 +21,7 @@ export const liteSprintPlannerAgentConfiguration = {
 	orchestrationReviewer: { model: MODEL_PROFILES.deepseekProMax },
 	phaseReviewer: { model: MODEL_PROFILES.deepseekProMax },
 	// ── Execution / orchestration ──
-	implementationWorker: { model: MODEL_PROFILES.deepseekFlashMax },
+	implementationWorker: { model: MODEL_PROFILES.deepseekProHigh },
 	phaseValidator: { model: MODEL_PROFILES.deepseekProMax },
 	integrationValidator: { model: MODEL_PROFILES.deepseekProMax },
 	executionAdvisor: { model: MODEL_PROFILES.deepseekProMax },

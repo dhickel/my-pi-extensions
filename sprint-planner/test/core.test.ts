@@ -319,12 +319,12 @@ test("agent configuration covers every sprint-planner role with exact tuples", (
 	assert.deepEqual(agents.executionAdvisor, { model: { provider: "openai-codex", model: "gpt-5.6-sol", thinking: "xhigh" } });
 });
 
-test("lite configuration assigns every agent to deepseek-v4-pro max except the implementation worker", () => {
+test("lite configuration assigns every agent to deepseek-v4-pro except the implementation worker", () => {
 	const lite = SPRINT_PLANNER_AGENT_CONFIGURATIONS.lite;
 	assert.deepEqual(Object.keys(lite), Object.keys(SPRINT_PLANNER_AGENT_CONFIGURATIONS.default), "lite covers every agent");
 	for (const [key, entry] of Object.entries(lite)) {
 		if (key === "implementationWorker") {
-			assert.deepEqual(entry.model, { provider: "deepseek", model: "deepseek-v4-flash", thinking: "max" }, `${key} should be DeepSeek flash max`);
+			assert.deepEqual(entry.model, { provider: "deepseek", model: "deepseek-v4-pro", thinking: "high" }, `${key} should be DeepSeek pro high`);
 		} else {
 			assert.deepEqual(entry.model, { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" }, `${key} should be DeepSeek pro max`);
 		}
@@ -1072,7 +1072,7 @@ test("plan and handoff prompts provide instruction-only time-estimate guidance",
 		redTeamPrompt,
 		synthesisPrompt,
 	} = await import("../prompts.ts");
-	const planPrompt = advancedPlanPrompt("Test handoff");
+	const planPrompt = advancedPlanPrompt("Test handoff", { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" }, { provider: "openai-codex", model: "gpt-5.6-terra", thinking: "high" });
 	assert.match(planPrompt, /4–22 files/);
 	assert.match(planPrompt, /Extra-large: 11–20 phases/);
 	assert.match(planPrompt, /likely to exceed one implementation agent's context/);
@@ -1101,7 +1101,7 @@ test("plan and handoff prompts provide instruction-only time-estimate guidance",
 	assert.match(decompositionReview, /complete requested user scope/i);
 	assert.match(decompositionReview, /mocks, stubs, placeholders, deferred work, partial implementations/i);
 
-	const orchReview = advancedOrchestrationReviewPrompt("Handoff", { path: "concepts.md", content: "x" }, { path: "orchestration.md", content: "x" }, ["phase-01-a.md"]);
+	const orchReview = advancedOrchestrationReviewPrompt("Handoff", { path: "concepts.md", content: "x" }, { path: "orchestration.md", content: "x" }, ["phase-01-a.md"], { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" }, { provider: "openai-codex", model: "gpt-5.6-terra", thinking: "high" });
 	assert.match(orchReview, /may not add, remove, split, or merge phases/);
 	assert.match(orchReview, /deepseek\/deepseek-v4-pro:max/);
 	assert.match(orchReview, /one implementer per unsplit phase/);
@@ -1155,7 +1155,7 @@ test("plan and handoff prompts provide instruction-only time-estimate guidance",
 
 test("prompt enforces scope classification criteria with exact budgets", async () => {
 	const { advancedPlanPrompt } = await import("../prompts.ts");
-	const prompt = advancedPlanPrompt("Test");
+	const prompt = advancedPlanPrompt("Test", { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" }, { provider: "openai-codex", model: "gpt-5.6-terra", thinking: "high" });
 	assert.match(prompt, /(S|s)mall.*2.{1,5}3/);
 	assert.match(prompt, /(M|m)edium.*3.{1,5}5/);
 	assert.match(prompt, /(L|l)arge.*6.{1,5}10/);
@@ -1450,7 +1450,7 @@ test("orchestration semantics enforce complete ledgers, dependencies, waves, tup
 	assert.throws(() => validateOrchestration(orchestrationSmall.replace(/^- phase-02-second\.md \|.*\n/m, ""), phases), /cover every phase/);
 	assert.throws(() => validateOrchestration(orchestrationSmall.replace("depends: phase-01-first.md", "depends: phase-99-missing.md"), phases), /not a plan phase/);
 	assert.throws(() => validateOrchestration(orchestrationSmall.replace("- wave-01: phase-01-first.md\n- wave-02: phase-02-second.md", "- wave-01: phase-02-second.md\n- wave-02: phase-01-first.md"), phases), /earlier wave/);
-	assert.throws(() => validateOrchestration(orchestrationSmall.replace("deepseek/deepseek-v4-pro:max", "deepseek/deepseek-v4-pro:high"), phases), /Model Assignments.*exact structured/);
+	assert.doesNotThrow(() => validateOrchestration(orchestrationSmall.replace("deepseek/deepseek-v4-pro:max", "deepseek/deepseek-v4-pro:high"), phases));
 	assert.throws(() => validateOrchestration(orchestrationSmall.replace("exactly one implementation agent per unsplit phase, or one sequential agent per lettered subphase for split phases", "two implementation agents per phase"), phases), /Model Assignments.*exact structured/);
 	assert.throws(() => validateOrchestration(orchestrationSmall.replace("review-and-repair must PASS", "review only"), phases), /Validation Gate.*exact structured/);
 	assert.throws(() => validateOrchestration(orchestrationSmall.replace("run final integration validation", "skip final integration validation"), phases), /Final Integration.*exact structured/);
@@ -1572,7 +1572,7 @@ test("resume invalidates hash-valid but semantically poisoned completed concepts
 		const paused = await new SprintPlannerEngine(new FatalPlanningRoleRunner("advanced phase reviewer: phase-01-first.md")).runSprint({ projectRoot: root, internalDevPath: internal, runId: "poison-orchestration", directive: "Poison orchestration", agents: 4 });
 		assert.equal(paused.status, "paused");
 		const runDirectory = path.join(internal, "sprints", "poison-orchestration");
-		await semanticallyPoisonCheckpoint(runDirectory, "planning-review-orchestration", "planning-review-draft/orchestration.md", orchestrationSmall.replace("deepseek/deepseek-v4-pro:max", "deepseek/deepseek-v4-pro:high"));
+		await semanticallyPoisonCheckpoint(runDirectory, "planning-review-orchestration", "planning-review-draft/orchestration.md", orchestrationSmall.replace("review-and-repair must PASS", "review only"));
 		const resumeRunner = new FakeRunner();
 		const resumed = await new SprintPlannerEngine(resumeRunner).resumeSprint(runDirectory, "poison-orchestration");
 		assert.equal(resumed.status, "completed", resumed.error);

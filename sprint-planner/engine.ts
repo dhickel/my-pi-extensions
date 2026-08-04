@@ -1022,7 +1022,7 @@ export class SprintPlannerEngine {
 			"planning-author",
 			"planning",
 			agents.planner.model,
-			{ role: "advanced planner", mode: "planning", prompt: advancedPlanPrompt(handoff), contextPaths: ["ironout/handoff.md"], expectation: { kind: "files", minFiles: 4, maxFiles: 22 }, maxSeniorCalls: agents.planner.maxSeniorCalls, seniorModel: seniorAdvisorModel(agents, agents.planner) },
+			{ role: "advanced planner", mode: "planning", prompt: advancedPlanPrompt(handoff, agents.implementationWorker.model, agents.phaseValidator.model), contextPaths: ["ironout/handoff.md"], expectation: { kind: "files", minFiles: 4, maxFiles: 22 }, maxSeniorCalls: agents.planner.maxSeniorCalls, seniorModel: seniorAdvisorModel(agents, agents.planner) },
 			(submission) => { validateDraftPlanShape(submission.files!); },
 			async (submission) => Promise.all(submission.files!.map((file) => store.write(`planning-draft/${file.path}`, file.content))),
 		);
@@ -1104,7 +1104,7 @@ export class SprintPlannerEngine {
 			"planning-review-orchestration",
 			"planning",
 			agents.orchestrationReviewer.model,
-			{ role: "advanced orchestration reviewer", mode: "planning", prompt: advancedOrchestrationReviewPrompt(handoff, correctedConceptsFile, baseOrchestration, phasePaths), contextPaths: ["ironout/handoff.md", "planning-review-draft/concepts.md", "planning-corrected/orchestration.md"], expectation: { kind: "files", allowedPaths: ["review.md", "orchestration.md"], requiredPaths: ["review.md", "orchestration.md"], minFiles: 2, maxFiles: 2, headings: { "review.md": REVIEW_HEADINGS, "orchestration.md": ORCHESTRATION_HEADINGS } } },
+			{ role: "advanced orchestration reviewer", mode: "planning", prompt: advancedOrchestrationReviewPrompt(handoff, correctedConceptsFile, baseOrchestration, phasePaths, agents.implementationWorker.model, agents.phaseValidator.model), contextPaths: ["ironout/handoff.md", "planning-review-draft/concepts.md", "planning-corrected/orchestration.md"], expectation: { kind: "files", allowedPaths: ["review.md", "orchestration.md"], requiredPaths: ["review.md", "orchestration.md"], minFiles: 2, maxFiles: 2, headings: { "review.md": REVIEW_HEADINGS, "orchestration.md": ORCHESTRATION_HEADINGS } } },
 			(submission) => {
 				const map = filesByPath(submission);
 				validateOrchestration(map.get("orchestration.md")!, phasePaths);
@@ -1419,7 +1419,7 @@ export class SprintPlannerEngine {
 		const staging = await createStandaloneStaging(plansParent, options.id);
 		const agents = this.agentConfiguration;
 		const draft = await this.#standaloneCall(
-			this.#request(options, { id: `${options.id}-plan`, role: "advanced planner", model: agents.planner.model, mode: "planning", prompt: advancedPlanPrompt(options.directive), contextPaths: [], expectation: { kind: "files", minFiles: 4, maxFiles: 22 }, maxSeniorCalls: agents.planner.maxSeniorCalls, seniorModel: seniorAdvisorModel(agents, agents.planner) }),
+			this.#request(options, { id: `${options.id}-plan`, role: "advanced planner", model: agents.planner.model, mode: "planning", prompt: advancedPlanPrompt(options.directive, agents.implementationWorker.model, agents.phaseValidator.model), contextPaths: [], expectation: { kind: "files", minFiles: 4, maxFiles: 22 }, maxSeniorCalls: agents.planner.maxSeniorCalls, seniorModel: seniorAdvisorModel(agents, agents.planner) }),
 			(submission) => validateDraftPlanShape(submission.files!),
 		);
 		await writeStagedFiles(staging, "planning-draft", draft.files!);
@@ -1457,7 +1457,7 @@ export class SprintPlannerEngine {
 
 		// Orchestration review.
 		const orchReview = await this.#standaloneCall(
-			this.#request(options, { id: `${options.id}-review-orchestration`, role: "advanced orchestration reviewer", model: agents.orchestrationReviewer.model, mode: "planning", prompt: advancedOrchestrationReviewPrompt(options.directive, correctedConcepts, baseOrchestration, phasePaths), contextPaths: ["concepts.md", "orchestration.md"], expectation: { kind: "files", allowedPaths: ["review.md", "orchestration.md"], requiredPaths: ["review.md", "orchestration.md"], minFiles: 2, maxFiles: 2, headings: { "review.md": REVIEW_HEADINGS, "orchestration.md": ORCHESTRATION_HEADINGS } } }),
+			this.#request(options, { id: `${options.id}-review-orchestration`, role: "advanced orchestration reviewer", model: agents.orchestrationReviewer.model, mode: "planning", prompt: advancedOrchestrationReviewPrompt(options.directive, correctedConcepts, baseOrchestration, phasePaths, agents.implementationWorker.model, agents.phaseValidator.model), contextPaths: ["concepts.md", "orchestration.md"], expectation: { kind: "files", allowedPaths: ["review.md", "orchestration.md"], requiredPaths: ["review.md", "orchestration.md"], minFiles: 2, maxFiles: 2, headings: { "review.md": REVIEW_HEADINGS, "orchestration.md": ORCHESTRATION_HEADINGS } } }),
 			(submission) => validateOrchestration(filesByPath(submission).get("orchestration.md")!, phasePaths),
 		);
 		const orchMap = filesByPath(orchReview);

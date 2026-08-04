@@ -24,6 +24,7 @@ export const MODEL_PROFILES = {
 	solXhigh: { provider: "openai-codex", model: "gpt-5.6-sol", thinking: "xhigh" },
 	terraHigh: { provider: "openai-codex", model: "gpt-5.6-terra", thinking: "high" },
 	deepseekProMax: { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" },
+	deepseekProHigh: { provider: "deepseek", model: "deepseek-v4-pro", thinking: "high" },
 	deepseekFlashMax: { provider: "deepseek", model: "deepseek-v4-flash", thinking: "max" },
 } as const satisfies Record<string, ModelTuple>;
 
