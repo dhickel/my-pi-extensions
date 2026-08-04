@@ -1,9 +1,9 @@
 ---
 name: senior-agent
-description: Use this skill to escalate difficult engineering work to a senior engineer subagent when the current agent is stuck, a bug or failed implementation resists normal debugging, architectural or design concerns need diagnosis, or an implementation, repair, or review needs expert completion. Always runs the escalation with openai-codex/gpt-5.6-sol at xhigh reasoning. Do not use for routine work or ordinary parallelization.
-compatibility: Requires Pi with the subagent_spawn, subagent_poll, and subagent_status tools, configured authentication for openai-codex/gpt-5.6-sol, and xhigh reasoning support. A direct subagent caller must have been launched with allowSubagents enabled.
+description: Use this skill to escalate difficult engineering work to a senior engineer subagent when the current agent is stuck, a bug or failed implementation resists normal debugging, architectural or design concerns need diagnosis, or an implementation, repair, or review needs expert completion. Runs the escalation with openai-codex/gpt-5.6-sol at high reasoning by default. Escalate to max thinking when a prior senior-agent pass on the same problem has not resolved it, or when a hard blocker, bug, or issue has persisted across multiple repair attempts. Do not use for routine work or ordinary parallelization.
+compatibility: Requires Pi with the subagent_spawn, subagent_poll, and subagent_status tools, configured authentication for openai-codex/gpt-5.6-sol, and high (or max) reasoning support. A direct subagent caller must have been launched with allowSubagents enabled.
 metadata:
-  version: "3.0.0"
+  version: "3.1.0"
 ---
 
 # Senior Agent
@@ -16,9 +16,11 @@ Do not perform the senior escalation in the caller's own model context. Always l
 
 - `provider`: `openai-codex`
 - `model`: `gpt-5.6-sol`
-- `thinkingLevel`: `xhigh`
+- `thinkingLevel`: `high` (default) or `max` (escalated)
 
-These values must never be inherited, omitted, downgraded, or replaced. Pi's canonical provider identifier for the Codex provider is `openai-codex`.
+These values must never be inherited, omitted, or replaced. Pi's canonical provider identifier for the Codex provider is `openai-codex`.
+
+Use `high` thinking as the default. Escalate to `max` thinking only when a previous senior-agent pass on the same problem did not resolve it, or when the blocker, bug, or issue has survived multiple distinct repair attempts without a definitive diagnosis. Do not start at `max` for a first escalation.
 
 If `subagent_spawn` or `subagent_poll` is unavailable, or the required model, authentication, or thinking level is rejected, do not emulate the senior agent with another model. Report that the escalation could not run and include the concrete failure. When the caller is itself a direct subagent, these controls are available only if the root explicitly launched it with `allowSubagents: true`. Senior escalation agents must also be launched with `allowSubagents: true` so they can spawn one bounded nested delegation layer when useful; any subagent they spawn must not receive further subagent controls.
 
@@ -82,7 +84,7 @@ Choose a short, descriptive name that has not been used in the current root sess
       "task": "<complete escalation brief>",
       "provider": "openai-codex",
       "model": "gpt-5.6-sol",
-      "thinkingLevel": "xhigh",
+      "thinkingLevel": "high",
       "tools": ["read"],
       "allowSubagents": true
     }
@@ -100,7 +102,7 @@ Choose a short, descriptive name that has not been used in the current root sess
       "task": "<complete escalation brief with explicit edit authority>",
       "provider": "openai-codex",
       "model": "gpt-5.6-sol",
-      "thinkingLevel": "xhigh",
+      "thinkingLevel": "high",
       "tools": ["read", "bash", "edit", "write"],
       "allowSubagents": true
     }
@@ -143,7 +145,7 @@ Invalid or stale cursors, digest mismatch, or byte-count mismatch block that evi
 
 When the result arrives (direct or reconstructed):
 
-1. Confirm the reported provider, model, and thinking level are `openai-codex`, `gpt-5.6-sol`, and `xhigh`.
+1. Confirm the reported provider, model, and thinking level are `openai-codex`, `gpt-5.6-sol`, and `high` (or `max` when the escalation rule was triggered).
 2. Review the diagnosis and inspect any edits; do not accept them blindly.
 3. Run or confirm the relevant validation in the caller context when practical.
 4. Continue implementation using the senior result, or report its findings, evidence, edits, risks, and remaining blockers to the user.
