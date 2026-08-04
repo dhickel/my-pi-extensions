@@ -273,9 +273,10 @@ test("workflow prompts remain raw and are never probed or expanded as paths", ()
 });
 
 test("agent configuration covers every sprint-planner role with exact tuples", () => {
-	assert.equal(DEFAULT_SPRINT_PLANNER_AGENT_CONFIGURATION, "default");
+	assert.equal(DEFAULT_SPRINT_PLANNER_AGENT_CONFIGURATION, "lite");
 	const agents = SPRINT_PLANNER_AGENT_CONFIGURATIONS.default;
-	assert.equal(loadDefaultSprintPlannerAgentConfiguration(), agents);
+	const loaded = loadDefaultSprintPlannerAgentConfiguration();
+	assert.deepEqual(Object.keys(loaded), Object.keys(agents), "lite config covers every agent");
 	assert.deepEqual(Object.keys(agents), [
 		"roleRouter",
 		"brainstormWorker",
@@ -373,10 +374,10 @@ test("fake-runner sprint stops after corrected plan publication and cleans runti
 	const conceptReview = runner.requests.find((request) => request.role === "advanced concepts reviewer")!;
 	const orchestrationReview = runner.requests.find((request) => request.role === "advanced orchestration reviewer")!;
 	const phaseReviews = runner.requests.filter((request) => request.role.startsWith("advanced phase reviewer:"));
-	assert.equal(conceptReview.model.thinking, "high");
-	assert.equal(orchestrationReview.model.thinking, "high");
+	assert.deepEqual(conceptReview.model, engine.agentConfiguration.conceptsReviewer.model);
+	assert.deepEqual(orchestrationReview.model, engine.agentConfiguration.orchestrationReviewer.model);
 	assert.equal(phaseReviews.length, 2);
-	assert.equal(phaseReviews.every((request) => request.model.thinking === "high" && request.contextPaths.length === 3), true);
+	assert.equal(phaseReviews.every((request) => request.model.thinking === engine.agentConfiguration.phaseReviewer.model.thinking && request.contextPaths.length === 3), true);
 	assert.equal(runner.requests.some((request) => request.role.includes("advanced-plan reviewer")), false);
 	assert.match(await readFile(path.join(run, "reviews", "advanced-plan-review.md"), "utf8"), /phase-01-first/);
 	for (let index = 1; index <= 4; index++) {
@@ -491,12 +492,12 @@ test("standalone planning workflows publish their contracted outputs without run
 test("standalone ironout and advance planning resolve their exact agent assignments", async () => {
 	const { root, internal } = await project();
 	const ironoutRunner = new FakeRunner();
-	await new SprintPlannerEngine(ironoutRunner).runStandaloneIronout({ projectRoot: root, internalDevPath: internal, id: "routed-handoff", directive: "Settle", interactive: false });
+	await new SprintPlannerEngine(ironoutRunner, {}, SPRINT_PLANNER_AGENT_CONFIGURATIONS.default).runStandaloneIronout({ projectRoot: root, internalDevPath: internal, id: "routed-handoff", directive: "Settle", interactive: false });
 	assert.deepEqual(ironoutRunner.requests.find((request) => request.role === "ironout author")?.model, SPRINT_PLANNER_AGENT_CONFIGURATIONS.default.ironoutAuthor.model);
 	assert.deepEqual(ironoutRunner.requests.find((request) => request.role === "corrective ironout reviewer")?.model, SPRINT_PLANNER_AGENT_CONFIGURATIONS.default.ironoutReviewer.model);
 
 	const planningRunner = new FakeRunner();
-	await new SprintPlannerEngine(planningRunner).runStandaloneAdvancePlan({ projectRoot: root, internalDevPath: internal, id: "routed-plan", directive: "Plan" });
+	await new SprintPlannerEngine(planningRunner, {}, SPRINT_PLANNER_AGENT_CONFIGURATIONS.default).runStandaloneAdvancePlan({ projectRoot: root, internalDevPath: internal, id: "routed-plan", directive: "Plan" });
 	const agents = SPRINT_PLANNER_AGENT_CONFIGURATIONS.default;
 	const planner = planningRunner.requests.find((request) => request.role === "advanced planner")!;
 	assert.deepEqual(planner.model, agents.planner.model);
@@ -1033,7 +1034,7 @@ test("standalone advance plan performs orchestration corrective review", async (
 	const planDir = await new SprintPlannerEngine(runner).runStandaloneAdvancePlan({ projectRoot: root, internalDevPath: internal, id: "standalone-orch", directive: "Standalone plan" });
 	assert.deepEqual((await readdir(planDir)).sort(), ["concepts.md", "orchestration.md", "phase-01-first.md", "phase-02-second.md"]);
 	const orchReview = runner.requests.find((request) => request.role === "advanced orchestration reviewer")!;
-	assert.equal(orchReview.model.thinking, "high");
+	assert.deepEqual(orchReview.model, SPRINT_PLANNER_AGENT_CONFIGURATIONS.lite.orchestrationReviewer.model);
 	const summary = await readFile(path.join(internal, "reviews", "standalone-orch-advanced-plan-review.md"), "utf8");
 	assert.match(summary, /orchestration\.md/);
 });

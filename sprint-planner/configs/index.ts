@@ -9,7 +9,7 @@ export const SPRINT_PLANNER_AGENT_CONFIGURATIONS = {
 } as const satisfies Record<string, SprintPlannerAgentConfiguration>;
 
 /** Configuration selection is intentionally fixed until a selection contract exists. */
-export const DEFAULT_SPRINT_PLANNER_AGENT_CONFIGURATION = "default";
+export const DEFAULT_SPRINT_PLANNER_AGENT_CONFIGURATION = "lite";
 
 /** Load the fixed current configuration during extension initialization. */
 export function loadDefaultSprintPlannerAgentConfiguration(): SprintPlannerAgentConfiguration {
