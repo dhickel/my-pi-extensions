@@ -1,20 +1,20 @@
 # Sprint Planner — Model Route Assignments
 
-This file documents the engine-owned model tuples used across the sprint planner workflow. Every agent assignment — planning and execution — is centralized in `configs/default.ts` and loaded into the engine at extension initialization. The orchestrate skill reads its model assignments from this same configuration.
+This file documents the engine-owned model tuples used across the sprint planner workflow. Every agent assignment — planning and execution — is centralized in `configs/` (the active configuration `lite` is selected in `configs/index.ts`) and loaded into the engine at extension initialization. The orchestrate skill resolves its model assignments from this same configuration at run time.
 
 `MODEL_PROFILES` consolidates the exact provider/model/thinking tuples.
 
 ## Configuration loading
 
 - `configs/default.ts` contains the complete sprint-planner agent assignment object and must satisfy the `SprintPlannerAgentConfiguration` schema in `types.ts`. Every agent — roleRouter, brainstormWorker, brainstormSynthesis, brainstormRedTeam, ironoutAuthor, ironoutReviewer, planner, advisor, decompositionReviewer, conceptsReviewer, orchestrationReviewer, and phaseReviewer — is assigned here.
-- `configs/index.ts` registers named installed configurations, fixes `DEFAULT_SPRINT_PLANNER_AGENT_CONFIGURATION` to `default`, and exposes the default loader.
+- `configs/index.ts` registers named installed configurations, fixes `DEFAULT_SPRINT_PLANNER_AGENT_CONFIGURATION` to `lite`, and exposes the default loader.
 - During `sprintPlannerExtension()` initialization, `index.ts` loads that object into `currentAgentConfiguration` once and passes the snapshot to every new `SprintPlannerEngine`.
 - The engine uses only that injected snapshot for every workflow stage — brainstorm, ironout, and advanced planning. It persists resolved `ModelTuple` values in run state; configuration names are not persisted and there is no runtime or caller-selected configuration yet.
 - To add a future configuration, add a schema-conforming file beneath `configs/`, register it in `configs/index.ts`, and separately introduce an approved selection contract. Do not change the default as an implicit selection mechanism.
 
-## Default delegation policy
+## Delegation policy
 
-- Default implementation subagents must use `deepseek/deepseek-v4-pro` with `max` thinking unless the user explicitly requests another implementation model or a workflow-specific route below specifies otherwise.
+- The `default` configuration assigns implementation subagents `deepseek/deepseek-v4-pro` with `max` thinking; the active `lite` configuration assigns them `deepseek-v4-pro` with `high` thinking. The orchestrate skill resolves the active configuration's implementation assignment at run time (Model resolution contract) and must not rely on either static table.
 - Do not rely on inherited caller model/provider/thinking for implementation subagents. Every implementation delegation must explicitly set `provider`, `model`, and `thinkingLevel`; omitting them is a policy violation even when the current root agent happens to be DeepSeek.
 - Use the senior agent only when the user requests it directly, or as an escalation after ordinary implementation/debugging attempts have failed or produced a concrete blocker that needs senior diagnosis. Do not use the senior agent for routine first-pass implementation or ordinary parallelization. When invoked, senior agents should be launched with `allowSubagents: true` so they can delegate one bounded nested support layer when useful.
 
@@ -55,7 +55,7 @@ This file documents the engine-owned model tuples used across the sprint planner
 | Final Integration Validator | `openai-codex` | `gpt-5.6-terra` | high |
 | Senior Escalation | `openai-codex` | `gpt-5.6-sol` | xhigh |
 
-Execution assignments are drawn from the same `configs/default.ts` configuration. The orchestrate skill lists the resolved default tuples in its Fixed model contract section and treats the configuration as authoritative.
+Execution assignments are drawn from the same configuration files. The orchestrate skill resolves the active configuration's execution tuples (`implementationWorker`, `phaseValidator`, `integrationValidator`, `advisor`) at run time in its Model resolution contract section and treats the configuration as authoritative. The table above shows the `default` configuration; under the active `lite` configuration every execution role resolves to `deepseek/deepseek-v4-pro`, with the implementation worker at `high` thinking and all other roles at `max`.
 
 ## Rationale for model split
 

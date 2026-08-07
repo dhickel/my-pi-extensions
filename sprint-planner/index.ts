@@ -135,7 +135,7 @@ export default function sprintPlannerExtension(pi: ExtensionAPI) {
 	const standalone = new Map<WorkflowName, ActiveJob>();
 	const executionRecords = new Map<string, ExecutionRecordHandle>();
 	let bound: Binding | undefined;
-	// This load-time snapshot is fixed to configs/default.ts until configuration selection is introduced.
+	// This load-time snapshot resolves the active configuration (currently lite) once at extension load.
 	const currentAgentConfiguration = loadDefaultSprintPlannerAgentConfiguration();
 
 	function updateFooter(progress?: EngineProgress) {

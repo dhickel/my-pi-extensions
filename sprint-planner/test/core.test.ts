@@ -528,7 +528,7 @@ interface ParsedSkill {
 }
 
 const REQUIRED_ORCHESTRATE_SECTIONS = [
-	"Fixed model contract",
+	"Model resolution contract",
 	"Global estimate prohibition",
 	"Tool delegation contract",
 	"Preflight",
@@ -605,9 +605,9 @@ function parseSkill(content: string): ParsedSkill {
 function assertOrchestrateSkillContract(content: string): void {
 	const parsed = parseSkill(content);
 	assert.equal(parsed.frontmatter.get("name"), "orchestrate", "frontmatter name");
-	assert.match(parsed.frontmatter.get("description") ?? "", /execute.*workflow.*phased plan.*DeepSeek.*GPT-5\.6 Terra/is, "frontmatter description");
-	assert.match(parsed.frontmatter.get("compatibility") ?? "", /subagent_spawn.*subagent_poll.*subagent_status.*subagent_cancel.*deepseek-v4-pro max.*gpt-5\.6-terra high/i, "frontmatter compatibility");
-	assert.match(parsed.frontmatterText, /^metadata:\s*\n  version: "4\.1\.0"$/m, "frontmatter metadata version");
+	assert.match(parsed.frontmatter.get("description") ?? "", /execute.*workflow.*phased plan.*resolves every delegated model tuple.*sprint-planner agent configuration/is, "frontmatter description");
+	assert.match(parsed.frontmatter.get("compatibility") ?? "", /subagent_spawn.*subagent_poll.*subagent_status.*subagent_cancel.*configs\/index\.ts/i, "frontmatter compatibility");
+	assert.match(parsed.frontmatterText, /^metadata:\s*\n  version: "4\.2\.0"$/m, "frontmatter metadata version");
 
 	for (const heading of REQUIRED_ORCHESTRATE_SECTIONS) {
 		const count = parsed.sections.filter((section) => section.heading === heading).length;
@@ -621,11 +621,14 @@ function assertOrchestrateSkillContract(content: string): void {
 		assert.doesNotMatch(sections.get(heading)!, pattern, `${heading}: ${description}`);
 	};
 
-	must("Fixed model contract", /Implementation[\s\S]*`provider`: `deepseek`[\s\S]*`model`: `deepseek-v4-pro`[\s\S]*`thinkingLevel`: `max`/, "exact DeepSeek tuple");
-	must("Fixed model contract", /Post-phase review-and-repair and final integration[\s\S]*`provider`: `openai-codex`[\s\S]*`model`: `gpt-5\.6-terra`[\s\S]*`thinkingLevel`: `high`/, "exact GPT tuple");
-	must("Fixed model contract", /Never inherit, omit, downgrade, clamp, or substitute any tuple/i, "tuple substitution prohibition");
-	must("Fixed model contract", /unavailable, stop before implementation and report the exact failure/i, "unavailable tuple blocks implementation");
-	must("Fixed model contract", /self-reports.*root inspection.*test output do not replace independent GPT-5\.6 Terra high phase validation/is, "independent validation");
+	must("Model resolution contract", /`implementationWorker`[\s\S]*`phaseValidator`[\s\S]*`integrationValidator`[\s\S]*`advisor`/, "all delegated agent assignments resolved from config");
+	must("Model resolution contract", /`configs\/index\.ts`[\s\S]*`DEFAULT_SPRINT_PLANNER_AGENT_CONFIGURATION`/is, "active configuration name resolved from configs/index.ts");
+	must("Model resolution contract", /`MODEL_PROFILES`[\s\S]*`types\.ts`/s, "profile references expanded through types.ts");
+	must("Model resolution contract", /before the preflight and before every implementation delegation/i, "resolution precedes preflight and implementation");
+	must("Model resolution contract", /thinkingLevel.*thinking.*maps directly/s, "thinking maps to thinkingLevel");
+	must("Model resolution contract", /Never inherit, omit, downgrade, clamp, or substitute any tuple/i, "tuple substitution prohibition");
+	must("Model resolution contract", /unavailable, stop before implementation and report the exact failure/i, "unavailable tuple blocks implementation");
+	must("Model resolution contract", /self-reports.*root inspection.*test output do not replace independent phase validation by the resolved validation model/is, "independent validation");
 
 	must("Global estimate prohibition", /Every root report and every delegated report/i, "all root and delegated reports covered");
 	must("Global estimate prohibition", /human time estimates.*duration.*effort.*ETA.*calendar scheduling estimates/is, "human estimate categories prohibited");
@@ -637,8 +640,8 @@ function assertOrchestrateSkillContract(content: string): void {
 	must("Tool delegation contract", /registered tool does not need to be active in the caller.*enables it for the child/is, "inactive registered activation");
 	must("Tool delegation contract", /fixed sets.*only APIs registered in the standard coding harness.*search and listing through `bash`/is, "portable fixed tool sets");
 	must("Tool delegation contract", /Preflight agents[\s\S]{0,400}"tools"\s*:\s*\[\s*\]/i, "preflight tools empty");
-	must("Tool delegation contract", /DeepSeek implementers[\s\S]{0,400}"tools"\s*:\s*\[\s*"read"/i, "implementer four tools");
-	must("Tool delegation contract", /GPT-5\.6 Terra phase\/integration validators[\s\S]{0,400}"tools"\s*:\s*\[\s*"read"/i, "validator four tools");
+	must("Tool delegation contract", /Implementers[\s\S]{0,400}"tools"\s*:\s*\[\s*"read"/i, "implementer four tools");
+	must("Tool delegation contract", /Phase\/integration validators[\s\S]{0,400}"tools"\s*:\s*\[\s*"read"/i, "validator four tools");
 	must("Tool delegation contract", /No child receives subagent, sprint validation, sprint execution, user-questioning, or other root-only tools/i, "no root-only tools for children");
 
 	must("Preflight", /only after authoritative input resolution.*successful generated-plan validation.*accepted execution-record `start`/is, "preflight follows validation and execution start");
@@ -672,7 +675,7 @@ function assertOrchestrateSkillContract(content: string): void {
 	must("Start the execution record", /root owns all sprint tool calls/i, "root owns sprint tools");
 
 	must("One phase = one validation unit", /phase is the atomic dependency and validation unit/i, "phase-level dependency and validation boundary");
-	must("One phase = one validation unit", /unsplit phase maps to one DeepSeek Pro V4 `max` implementation-agent session/i, "one session for an unsplit phase");
+	must("One phase = one validation unit", /unsplit phase maps to one implementation-agent session at the resolved implementation model/i, "one session for an unsplit phase");
 	must("One phase = one validation unit", /lettered subphases.*each subphase maps to one sequential implementation-agent session/is, "lettered subphases use sequential sessions");
 	must("One phase = one validation unit", /Complete every subphase in letter order before launching the single phase-level validator/i, "validation follows all subphases");
 	must("One phase = one validation unit", /do not calculate or enforce token counts during execution/i, "no runtime token policy");
@@ -687,7 +690,7 @@ function assertOrchestrateSkillContract(content: string): void {
 	must("Schedule work", /default to sequential execution when safety cannot be confirmed/i, "non-authoritative sequential fallback");
 	must("Schedule work", /empty or uncertain write set is not evidence of safety.*fall back to sequential scheduling/is, "uncertain non-authoritative fallback");
 
-	must("Delegate implementation", /Spawn one DeepSeek Pro V4 `max` agent for each ready unsplit phase.*one at a time for each explicit lettered subphase/is, "one DeepSeek implementation delegation per implementation unit");
+	must("Delegate implementation", /Spawn one implementation agent at the resolved implementation model for each ready unsplit phase.*one at a time for each explicit lettered subphase/is, "one implementation delegation per implementation unit");
 	must("Delegate implementation", /Subphases execute sequentially in letter order.*parent phase's scope, dependencies, and validation gate/is, "ordered parent-scoped subphases");
 	must("Delegate implementation", /every task must be self-contained/i, "self-contained delegation");
 	must("Delegate implementation", /Implement the complete assigned phase or lettered subphase without placeholders, stubs, fake behavior, or speculative scope/i, "no incomplete implementation");
@@ -706,7 +709,7 @@ function assertOrchestrateSkillContract(content: string): void {
 	must("Poll every agent", /Verify the final digest matches the complete-result digest/i, "digest verification");
 	must("Poll every agent", /Verify the reconstructed byte count matches the complete-result byte count/i, "byte count verification");
 
-	must("Validate every phase with review-and-repair", /after every lettered subphase of a split phase has completed.*one GPT-5\.6 Terra `high` review-and-repair agent for the parent phase with full edit authority/is, "editing GPT validates after all subphases");
+	must("Validate every phase with review-and-repair", /after every lettered subphase of a split phase has completed.*one review-and-repair agent at the resolved validation model.*for the parent phase with full edit authority/is, "editing validator at resolved model after all subphases");
 	must("Validate every phase with review-and-repair", /Never launch independent validation between a phase's lettered subphases/i, "no intermediate subphase validation");
 	must("Validate every phase with review-and-repair", /Validators may not start until all implementation agents in that wave have stopped/i, "full implementation-wave barrier");
 	must("Validate every phase with review-and-repair", /Inspect the actual repository state independently/i, "independent state inspection");
@@ -724,7 +727,7 @@ function assertOrchestrateSkillContract(content: string): void {
 	must("PASS-before-dependent barriers", /phase remains `BLOCKED`, start no later dependency wave/i, "BLOCKED prevents downstream");
 
 	// Malformed verdict retry
-	must("PASS-before-dependent barriers", /Retry once with a fresh, uniquely named GPT-5\.6 Terra high validator using the same exact editing tool set and authority/i, "malformed retry boundary");
+	must("PASS-before-dependent barriers", /Retry once with a fresh, uniquely named validator at the resolved validation model using the same exact editing tool set and authority/i, "malformed retry boundary");
 	must("PASS-before-dependent barriers", /malformed response never becomes PASS, BLOCKED evidence by itself, or a DeepSeek repair request/i, "malformed never becomes verdict");
 
 	// Checkpoint changed files and verdicts
@@ -735,7 +738,7 @@ function assertOrchestrateSkillContract(content: string): void {
 	must("Checkpoint changed files and verdicts", /Before marking any PASS or opening a dependent barrier, checkpoint through `sprint_execution_record`/i, "checkpoint before PASS barrier");
 	must("Checkpoint changed files and verdicts", /Pass the latest returned revision to every checkpoint call/i, "revision on every checkpoint");
 
-	must("Final integration gate", /After every phase has a checkpointed `VERDICT: PASS`, launch one GPT-5\.6 Terra `high` integration review-and-repair agent with full edit authority/i, "editing integration gate after all PASS");
+	must("Final integration gate", /After every phase has a checkpointed `VERDICT: PASS`, launch one integration review-and-repair agent at the resolved integration-validation model.*with full edit authority/i, "editing integration gate after all PASS");
 	must("Final integration gate", /inspect cross-phase behavior.*run applicable broader checks.*edit any remaining integration defect itself/is, "integration repair and criteria");
 	must("Final integration gate", /After the integration validator terminates, observe repository changes again/i, "observe integration repairs");
 	must("Final integration gate", /After integration PASS, checkpoint the integration verdict, observed changed-file set, and evidence through `sprint_execution_record`/i, "checkpoint integration");
@@ -840,7 +843,7 @@ test("orchestrate skill satisfies the complete actionable contract", async () =>
 test("orchestrate instructions execute lettered subphases before one phase validation", async () => {
 	const skill = await loadSkill();
 	assert.match(skill, /phase is the atomic dependency and validation unit/i);
-	assert.match(skill, /unsplit phase maps to one DeepSeek Pro V4 `max` implementation-agent session/i);
+	assert.match(skill, /unsplit phase maps to one implementation-agent session at the resolved implementation model/i);
 	assert.match(skill, /lettered subphases.*each subphase maps to one sequential implementation-agent session/is);
 	assert.match(skill, /Complete every subphase in letter order before launching the single phase-level validator/i);
 	assert.match(skill, /Never launch independent validation between a phase's lettered subphases/i);
@@ -4143,23 +4146,25 @@ function extractSpawnExamples(content: string): SpawnExample[] {
 
 // ── Orchestrate spawn example tool assertions ──────────────────────────
 
-test("orchestrate preflight spawn examples have exact tuples and empty tools", async () => {
+test("orchestrate preflight spawn examples resolve tuples from the configuration and have empty tools", async () => {
 	const content = await loadSkill();
 	const examples = extractSpawnExamples(content);
 	const preflights = examples.filter((ex) => ex.name.startsWith("preflight-"));
 	assert.ok(preflights.length >= 2, "at least two preflight examples");
 
-	const deepseekPreflight = preflights.find((ex) => ex.provider === "deepseek");
-	assert.ok(deepseekPreflight, "DeepSeek preflight exists");
-	assert.equal(deepseekPreflight.model, "deepseek-v4-pro");
-	assert.equal(deepseekPreflight.thinkingLevel, "max");
-	assert.deepEqual(deepseekPreflight.tools, []);
+	const implPreflight = preflights.find((ex) => ex.name.startsWith("preflight-impl-"));
+	assert.ok(implPreflight, "implementation preflight exists");
+	assert.equal(implPreflight.provider, "<resolved-implementation-provider>");
+	assert.equal(implPreflight.model, "<resolved-implementation-model>");
+	assert.equal(implPreflight.thinkingLevel, "<resolved-implementation-thinking>");
+	assert.deepEqual(implPreflight.tools, []);
 
-	const gptPreflight = preflights.find((ex) => ex.provider === "openai-codex");
-	assert.ok(gptPreflight, "GPT preflight exists");
-	assert.equal(gptPreflight.model, "gpt-5.6-terra");
-	assert.equal(gptPreflight.thinkingLevel, "high");
-	assert.deepEqual(gptPreflight.tools, []);
+	const validatePreflight = preflights.find((ex) => ex.name.startsWith("preflight-validate-"));
+	assert.ok(validatePreflight, "validation preflight exists");
+	assert.equal(validatePreflight.provider, "<resolved-validation-provider>");
+	assert.equal(validatePreflight.model, "<resolved-validation-model>");
+	assert.equal(validatePreflight.thinkingLevel, "<resolved-validation-thinking>");
+	assert.deepEqual(validatePreflight.tools, []);
 
 	// No preflight has any tools
 	for (const pf of preflights) assert.deepEqual(pf.tools, []);
@@ -4172,9 +4177,9 @@ test("orchestrate implementer spawn examples have exact four-tool set", async ()
 	assert.ok(implementers.length >= 1, "at least one implementer example");
 
 	for (const impl of implementers) {
-		assert.equal(impl.provider, "deepseek");
-		assert.equal(impl.model, "deepseek-v4-pro");
-		assert.equal(impl.thinkingLevel, "max");
+		assert.equal(impl.provider, "<resolved-implementation-provider>");
+		assert.equal(impl.model, "<resolved-implementation-model>");
+		assert.equal(impl.thinkingLevel, "<resolved-implementation-thinking>");
 		assert.deepEqual(impl.tools, ["read", "bash", "edit", "write"]);
 	}
 });
@@ -4186,9 +4191,9 @@ test("orchestrate validator spawn examples have exact four-tool set", async () =
 	assert.ok(validators.length >= 1, "at least one phase validator example");
 
 	for (const val of validators) {
-		assert.equal(val.provider, "openai-codex");
-		assert.equal(val.model, "gpt-5.6-terra");
-		assert.equal(val.thinkingLevel, "high");
+		assert.equal(val.provider, "<resolved-validation-provider>");
+		assert.equal(val.model, "<resolved-validation-model>");
+		assert.equal(val.thinkingLevel, "<resolved-validation-thinking>");
 		assert.deepEqual(val.tools, ["read", "bash", "edit", "write"]);
 	}
 });
@@ -4200,9 +4205,9 @@ test("orchestrate integration validator example has exact four-tool set", async 
 	assert.ok(integrations.length >= 1, "at least one integration validator example");
 
 	for (const iv of integrations) {
-		assert.equal(iv.provider, "openai-codex");
-		assert.equal(iv.model, "gpt-5.6-terra");
-		assert.equal(iv.thinkingLevel, "high");
+		assert.equal(iv.provider, "<resolved-integration-provider>");
+		assert.equal(iv.model, "<resolved-integration-model>");
+		assert.equal(iv.thinkingLevel, "<resolved-integration-thinking>");
 		assert.deepEqual(iv.tools, ["read", "bash", "edit", "write"]);
 	}
 });
@@ -4605,9 +4610,9 @@ test("orchestrate skill lists every role-specific tool set in the delegation con
 	// Preflight — check for "tools": [] in the preflight section
 	assert.match(content, /Preflight agents[\s\S]{0,300}"tools"\s*:\s*\[\s*\]/i);
 	// Implementers
-	assert.match(content, /DeepSeek implementers[\s\S]{0,300}"tools"\s*:\s*\[/);
+	assert.match(content, /Implementers \(resolved implementation model\)[\s\S]{0,300}"tools"\s*:\s*\[/);
 	// Validators
-	assert.match(content, /GPT-5\.6 Terra phase\/integration validators[\s\S]{0,300}"tools"\s*:\s*\[/);
+	assert.match(content, /Phase\/integration validators \(resolved validation model\)[\s\S]{0,300}"tools"\s*:\s*\[/);
 	// Image viewing
 	assert.match(content, /Image viewing[\s\S]{0,100}"tools"\s*:\s*\[\s*"read"\s*\]/i);
 });
