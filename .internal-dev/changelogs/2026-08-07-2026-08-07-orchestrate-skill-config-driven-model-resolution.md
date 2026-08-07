@@ -38,3 +38,7 @@ The sprint-planner suite specification's model-contract prose should be re-check
 
 - The four pre-existing senior-agent skill-contract test failures (tracked in GitHub Issue #1) remain; they are unrelated to this change and were verified present at the prior HEAD (8a1cf20).
 - Decide whether `lite` should keep `implementationWorker` at `deepseek-v4-pro:high` or move to flash; the `deepseekFlashMax` profile in `types.ts` remains unused.
+
+## Amendment (commit 1fc4894)
+
+Corrected the senior-escalation resolution slot: the Model resolution contract now resolves `executionAdvisor` (the config slot designed for execution senior escalation: `sol:xhigh` under default, `deepseek-v4-pro:max` under lite) instead of `advisor` (`sol:max` under default). Under the default config the earlier wording would have silently downgraded escalation spawns from xhigh to max; under the active lite config both slots are `deepseek-v4-pro:max`, so no behavioral change there. Files touched: `sprint-planner/skills/orchestrate/SKILL.md`, `sprint-planner/test/core.test.ts`, `sprint-planner/AGENTS.md`, `sprint-planner/README.md`. Test suite: 208 pass, same 4 pre-existing senior-agent failures.
