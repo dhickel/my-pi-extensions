@@ -621,7 +621,7 @@ function assertOrchestrateSkillContract(content: string): void {
 		assert.doesNotMatch(sections.get(heading)!, pattern, `${heading}: ${description}`);
 	};
 
-	must("Model resolution contract", /`implementationWorker`[\s\S]*`phaseValidator`[\s\S]*`integrationValidator`[\s\S]*`advisor`/, "all delegated agent assignments resolved from config");
+	must("Model resolution contract", /`implementationWorker`[\s\S]*`phaseValidator`[\s\S]*`integrationValidator`[\s\S]*`executionAdvisor`/, "all delegated agent assignments resolved from config");
 	must("Model resolution contract", /`configs\/index\.ts`[\s\S]*`DEFAULT_SPRINT_PLANNER_AGENT_CONFIGURATION`/is, "active configuration name resolved from configs/index.ts");
 	must("Model resolution contract", /`MODEL_PROFILES`[\s\S]*`types\.ts`/s, "profile references expanded through types.ts");
 	must("Model resolution contract", /before the preflight and before every implementation delegation/i, "resolution precedes preflight and implementation");

@@ -55,7 +55,7 @@ This file documents the engine-owned model tuples used across the sprint planner
 | Final Integration Validator | `openai-codex` | `gpt-5.6-terra` | high |
 | Senior Escalation | `openai-codex` | `gpt-5.6-sol` | xhigh |
 
-Execution assignments are drawn from the same configuration files. The orchestrate skill resolves the active configuration's execution tuples (`implementationWorker`, `phaseValidator`, `integrationValidator`, `advisor`) at run time in its Model resolution contract section and treats the configuration as authoritative. The table above shows the `default` configuration; under the active `lite` configuration every execution role resolves to `deepseek/deepseek-v4-pro`, with the implementation worker at `high` thinking and all other roles at `max`.
+Execution assignments are drawn from the same configuration files. The orchestrate skill resolves the active configuration's execution tuples (`implementationWorker`, `phaseValidator`, `integrationValidator`, `executionAdvisor`) at run time in its Model resolution contract section and treats the configuration as authoritative. The table above shows the `default` configuration; under the active `lite` configuration every execution role resolves to `deepseek/deepseek-v4-pro`, with the implementation worker at `high` thinking and all other roles at `max`.
 
 ## Rationale for model split
 
