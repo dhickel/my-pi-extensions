@@ -293,7 +293,6 @@ test("agent configuration covers every sprint-planner role with exact tuples", (
 		"implementationWorker",
 		"phaseValidator",
 		"integrationValidator",
-		"executionAdvisor",
 		"seniorAgent",
 	]);
 	// Model tuples
@@ -317,7 +316,7 @@ test("agent configuration covers every sprint-planner role with exact tuples", (
 		assert.deepEqual(agents[key], { model: agents[key].model });
 	}
 	assert.deepEqual(agents.brainstormWorker, { model: { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" } });
-	assert.deepEqual(agents.executionAdvisor, { model: { provider: "openai-codex", model: "gpt-5.6-sol", thinking: "xhigh" } });
+	assert.deepEqual(agents.seniorAgent, { model: { provider: "openai-codex", model: "gpt-5.6-sol", thinking: "high" } });
 });
 
 test("lite configuration assigns every agent to deepseek-v4-pro except the implementation worker", () => {
@@ -2231,11 +2230,11 @@ test("ThinkingLevel type contains each level exactly once", () => {
 	assert.ok(levels.has("low") === false);
 	assert.ok(levels.has("medium") === false); // not used but exists in type
 	assert.ok(levels.has("high"));
-	assert.ok(levels.has("xhigh"));
+	assert.ok(levels.has("xhigh") === false); // not used by config tuples; reserved for senior-agent escalation (high → xhigh → max)
 	assert.ok(levels.has("max"));
 	// Verify assignments that use higher reasoning levels.
 	assert.equal(SPRINT_PLANNER_AGENT_CONFIGURATIONS.default.phaseReviewer.model.thinking, "high");
-	assert.equal(SPRINT_PLANNER_AGENT_CONFIGURATIONS.default.executionAdvisor.model.thinking, "xhigh");
+	assert.equal(SPRINT_PLANNER_AGENT_CONFIGURATIONS.default.seniorAgent.model.thinking, "high");
 	// Verify no duplicate medium in union by checking all values are valid
 	for (const entry of Object.values(SPRINT_PLANNER_AGENT_CONFIGURATIONS.default)) {
 		const valid: string[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];

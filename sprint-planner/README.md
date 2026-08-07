@@ -51,7 +51,7 @@ Together with `sprint_validate_plan` and `sprint_execution_record`, these are th
 
 ## Agent model configuration
 
-Every sprint-planner agent assignment lives in `configs/`. `configs/default.ts` is the current configuration and must conform to `SprintPlannerAgentConfiguration` in `types.ts` — covering every planning stage (role router, brainstorm workers, synthesizer, red team, ironout author and reviewer, planner, advisor, and all review roles) plus execution roles (implementation worker, phase validator, integration validator, execution advisor, and senior agent). `configs/index.ts` registers installed configurations and fixes `DEFAULT_SPRINT_PLANNER_AGENT_CONFIGURATION` to `default`.
+Every sprint-planner agent assignment lives in `configs/`. `configs/default.ts` is the current configuration and must conform to `SprintPlannerAgentConfiguration` in `types.ts` — covering every planning stage (role router, brainstorm workers, synthesizer, red team, ironout author and reviewer, planner, advisor, and all review roles) plus execution roles (implementation worker, phase validator, integration validator, and senior agent). `configs/index.ts` registers installed configurations and fixes `DEFAULT_SPRINT_PLANNER_AGENT_CONFIGURATION` to `default`.
 
 When Pi loads `sprintPlannerExtension()`, the extension resolves that fixed default into `currentAgentConfiguration`. Every `SprintPlannerEngine` created by the extension receives this same configuration snapshot and uses it for every pipeline stage. Resolved tuples, not configuration names, remain in persisted state. There is no runtime setting, command option, or tool parameter to select another configuration yet.
 

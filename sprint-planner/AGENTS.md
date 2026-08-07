@@ -53,17 +53,16 @@ This file documents the engine-owned model tuples used across the sprint planner
 | Phase Implementer (per phase) | `deepseek` | `deepseek-v4-pro` | max |
 | Phase Validator (per phase) | `openai-codex` | `gpt-5.6-terra` | high |
 | Final Integration Validator | `openai-codex` | `gpt-5.6-terra` | high |
-| Senior Escalation (execution) | `openai-codex` | `gpt-5.6-sol` | xhigh |
 | Senior Agent (`seniorAgent`) | `openai-codex` | `gpt-5.6-sol` | high |
 
-Execution assignments are drawn from the same configuration files. The orchestrate skill and the senior-agent skill resolve the active configuration's execution tuples (`implementationWorker`, `phaseValidator`, `integrationValidator`, `seniorAgent`) at run time in their model resolution contracts and treat the configuration as authoritative. The table above shows the `default` configuration; under the active `lite` configuration every execution role resolves to `deepseek/deepseek-v4-pro`, with the implementation worker at `high` thinking and all other roles at `max`. The `seniorAgent` row starts at the resolved thinking level and escalates one step (high → xhigh → max) after each failed pass; the `executionAdvisor` row is defined but not consumed by either skill.
+Execution assignments are drawn from the same configuration files. The orchestrate skill and the senior-agent skill resolve the active configuration's execution tuples (`implementationWorker`, `phaseValidator`, `integrationValidator`, `seniorAgent`) at run time in their model resolution contracts and treat the configuration as authoritative. The table above shows the `default` configuration; under the active `lite` configuration every execution role resolves to `deepseek/deepseek-v4-pro`, with the implementation worker at `high` thinking and all other roles at `max`. The `seniorAgent` row starts at the resolved thinking level and escalates one step (high → xhigh → max) after each failed pass.
 
 ## Rationale for model split
 
 - **DeepSeek Pro V4 max** is used for divergent/creative generation: brainstorm workers, cross-reviewers, and phase implementers.
 - **GPT-5.6 Sol** is used for routing, synthesis, red-teaming, authoring, and the senior advisor — analytical and convergent tasks.
 - **GPT-5.6 Terra high** is used for the ironout corrective reviewer, all plan reviews (decomposition, concepts, orchestration, phase reviews), and execution validators — balancing analytical rigor with cost-efficiency.
-- **GPT-5.6 Sol xhigh** is defined for the `executionAdvisor` slot (deep execution escalation) but is not consumed by either skill; senior escalation spawns use the `seniorAgent` assignment (`gpt-5.6-sol` high under default, escalating to xhigh then max after failed passes).
+- **GPT-5.6 Sol high** is the `seniorAgent` assignment under the default configuration, escalating to `xhigh` then `max` after failed passes; under lite it is `deepseek-v4-pro` at `max`.
 
 ## Change history
 

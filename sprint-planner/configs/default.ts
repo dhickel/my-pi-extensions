@@ -27,6 +27,5 @@ export const defaultSprintPlannerAgentConfiguration = {
 	implementationWorker: { model: MODEL_PROFILES.deepseekProMax },
 	phaseValidator: { model: MODEL_PROFILES.terraHigh },
 	integrationValidator: { model: MODEL_PROFILES.terraHigh },
-	executionAdvisor: { model: MODEL_PROFILES.solXhigh },
 	seniorAgent: { model: MODEL_PROFILES.solHigh },
 } as const satisfies SprintPlannerAgentConfiguration;
