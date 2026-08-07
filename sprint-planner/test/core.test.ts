@@ -294,6 +294,7 @@ test("agent configuration covers every sprint-planner role with exact tuples", (
 		"phaseValidator",
 		"integrationValidator",
 		"executionAdvisor",
+		"seniorAgent",
 	]);
 	// Model tuples
 	for (const entry of Object.values(agents)) {
@@ -312,7 +313,7 @@ test("agent configuration covers every sprint-planner role with exact tuples", (
 		assert.deepEqual(agent, { model: { provider: "openai-codex", model: "gpt-5.6-terra", thinking: "high" } });
 	}
 	// Simple model-only assignments
-	for (const key of ["roleRouter", "brainstormSynthesis", "brainstormRedTeam", "ironoutAuthor", "implementationWorker", "phaseValidator", "integrationValidator"] as const) {
+	for (const key of ["roleRouter", "brainstormSynthesis", "brainstormRedTeam", "ironoutAuthor", "implementationWorker", "phaseValidator", "integrationValidator", "seniorAgent"] as const) {
 		assert.deepEqual(agents[key], { model: agents[key].model });
 	}
 	assert.deepEqual(agents.brainstormWorker, { model: { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" } });
@@ -607,7 +608,7 @@ function assertOrchestrateSkillContract(content: string): void {
 	assert.equal(parsed.frontmatter.get("name"), "orchestrate", "frontmatter name");
 	assert.match(parsed.frontmatter.get("description") ?? "", /execute.*workflow.*phased plan.*resolves every delegated model tuple.*sprint-planner agent configuration/is, "frontmatter description");
 	assert.match(parsed.frontmatter.get("compatibility") ?? "", /subagent_spawn.*subagent_poll.*subagent_status.*subagent_cancel.*configs\/index\.ts/i, "frontmatter compatibility");
-	assert.match(parsed.frontmatterText, /^metadata:\s*\n  version: "4\.2\.0"$/m, "frontmatter metadata version");
+	assert.match(parsed.frontmatterText, /^metadata:\s*\n  version: "4\.3\.0"$/m, "frontmatter metadata version");
 
 	for (const heading of REQUIRED_ORCHESTRATE_SECTIONS) {
 		const count = parsed.sections.filter((section) => section.heading === heading).length;
@@ -621,7 +622,7 @@ function assertOrchestrateSkillContract(content: string): void {
 		assert.doesNotMatch(sections.get(heading)!, pattern, `${heading}: ${description}`);
 	};
 
-	must("Model resolution contract", /`implementationWorker`[\s\S]*`phaseValidator`[\s\S]*`integrationValidator`[\s\S]*`executionAdvisor`/, "all delegated agent assignments resolved from config");
+	must("Model resolution contract", /`implementationWorker`[\s\S]*`phaseValidator`[\s\S]*`integrationValidator`[\s\S]*`seniorAgent`/, "all delegated agent assignments resolved from config");
 	must("Model resolution contract", /`configs\/index\.ts`[\s\S]*`DEFAULT_SPRINT_PLANNER_AGENT_CONFIGURATION`/is, "active configuration name resolved from configs/index.ts");
 	must("Model resolution contract", /`MODEL_PROFILES`[\s\S]*`types\.ts`/s, "profile references expanded through types.ts");
 	must("Model resolution contract", /before the preflight and before every implementation delegation/i, "resolution precedes preflight and implementation");
@@ -4452,7 +4453,7 @@ async function loadSeniorSkill(): Promise<string> {
 function assertSeniorSkillContract(content: string): void {
 	const parsed = parseSkill(content);
 	assert.equal(parsed.frontmatter.get("name"), "senior-agent");
-	assert.match(parsed.frontmatterText, /^metadata:\s*\n  version: "3\.0\.0"$/m);
+	assert.match(parsed.frontmatterText, /^metadata:\s*\n  version: "3\.2\.0"$/m);
 	assert.match(content, /ambiguous authority.*advisory tool set.*prohibit edits/is);
 	assert.match(content, /Always set `allowSubagents: true` on the senior agent/i);
 	assert.match(content, /must not receive sprint validation, sprint execution, user-questioning, or other root-only tools/i);
@@ -4460,18 +4461,21 @@ function assertSeniorSkillContract(content: string): void {
 	const examples = extractSpawnExamples(content);
 	assert.equal(examples.length, 2, "senior-agent must show exactly advisory and edit-authorized spawns");
 	assert.deepEqual(examples.map(({ name, provider, model, thinkingLevel, tools, allowSubagents }) => ({ name: name.replace(/<[^>]+>/g, "<unique>"), provider, model, thinkingLevel, tools, allowSubagents })), [
-		{ name: "senior-<unique>", provider: "openai-codex", model: "gpt-5.6-sol", thinkingLevel: "xhigh", tools: ["read"], allowSubagents: true },
-		{ name: "senior-<unique>", provider: "openai-codex", model: "gpt-5.6-sol", thinkingLevel: "xhigh", tools: ["read", "bash", "edit", "write"], allowSubagents: true },
+		{ name: "senior-<unique>", provider: "<resolved-senior-provider>", model: "<resolved-senior-model>", thinkingLevel: "<resolved-senior-thinking>", tools: ["read"], allowSubagents: true },
+		{ name: "senior-<unique>", provider: "<resolved-senior-provider>", model: "<resolved-senior-model>", thinkingLevel: "<resolved-senior-thinking>", tools: ["read", "bash", "edit", "write"], allowSubagents: true },
 	]);
 }
 
-test("senior-agent skill maintains exact model tuple and tool policy", async () => {
+test("senior-agent skill resolves its model from the configuration and escalates thinking after failed passes", async () => {
 	const content = await loadSeniorSkill();
 	assertSeniorSkillContract(content);
-	// Exact model tuple
-	assert.match(content, /"provider"\s*:\s*"openai-codex"/);
-	assert.match(content, /"model"\s*:\s*"gpt-5\.6-sol"/);
-	assert.match(content, /"thinkingLevel"\s*:\s*"xhigh"/);
+	// Config resolution
+	assert.match(content, /`seniorAgent`/);
+	assert.match(content, /`configs\/index\.ts`[\s\S]*`DEFAULT_SPRINT_PLANNER_AGENT_CONFIGURATION`/is);
+	assert.match(content, /`MODEL_PROFILES`[\s\S]*`types\.ts`/s);
+	// Thinking escalation ladder
+	assert.match(content, /next higher thinking level/i);
+	assert.match(content, /high.*xhigh.*max/is);
 	// No substitution
 	assert.match(content, /never be inherited, omitted, downgraded, or replaced/i);
 	assert.match(content, /do not emulate the senior agent with another model/i);
@@ -4484,9 +4488,9 @@ test("senior-agent advisory spawn example has exact read-only tool set", async (
 	assert.ok(advisory.length >= 1, "at least one advisory example");
 
 	for (const adv of advisory) {
-		assert.equal(adv.provider, "openai-codex");
-		assert.equal(adv.model, "gpt-5.6-sol");
-		assert.equal(adv.thinkingLevel, "xhigh");
+		assert.equal(adv.provider, "<resolved-senior-provider>");
+		assert.equal(adv.model, "<resolved-senior-model>");
+		assert.equal(adv.thinkingLevel, "<resolved-senior-thinking>");
 		assert.deepEqual(adv.tools, ["read"]);
 		assert.equal(adv.allowSubagents, true);
 	}
@@ -4499,9 +4503,9 @@ test("senior-agent edit-authorized spawn example has exact four-tool set", async
 	assert.ok(editAuth.length >= 1, "at least one edit-authorized example");
 
 	for (const ed of editAuth) {
-		assert.equal(ed.provider, "openai-codex");
-		assert.equal(ed.model, "gpt-5.6-sol");
-		assert.equal(ed.thinkingLevel, "xhigh");
+		assert.equal(ed.provider, "<resolved-senior-provider>");
+		assert.equal(ed.model, "<resolved-senior-model>");
+		assert.equal(ed.thinkingLevel, "<resolved-senior-thinking>");
 		assert.deepEqual(ed.tools, ["read", "bash", "edit", "write"]);
 		assert.equal(ed.allowSubagents, true);
 	}

@@ -45,7 +45,8 @@ export type SprintPlannerAgentId =
 	| "implementationWorker"
 	| "phaseValidator"
 	| "integrationValidator"
-	| "executionAdvisor";
+	| "executionAdvisor"
+	| "seniorAgent";
 
 export interface SprintPlannerAgentAssignment {
 	model: ModelTuple;

@@ -3,7 +3,7 @@ name: orchestrate
 description: Execute complex workflows, raw task directives, checklists, or phased plan files with dependency-aware sequential or safe parallel subagents. Resolves every delegated model tuple from the currently loaded sprint-planner agent configuration before any provider work. Use when the user asks to orchestrate, execute, or implement a multi-phase or long-running workflow.
 compatibility: Requires Pi with subagent_spawn, subagent_poll, subagent_status, and subagent_cancel; a readable sprint-planner extension configuration (configs/index.ts plus the active configuration file); sprint_validate_plan and sprint_execution_record tools.
 metadata:
-  version: "4.2.0"
+  version: "4.3.0"
 ---
 
 # Orchestrate
@@ -24,7 +24,7 @@ Resolve the active configuration before the preflight and before every implement
    - `implementationWorker` — the model for every implementation-agent spawn;
    - `phaseValidator` — the model for every post-phase review-and-repair spawn;
    - `integrationValidator` — the model for the final integration spawn;
-   - `executionAdvisor` — the model for senior escalation spawns.
+   - `seniorAgent` — the model for senior escalation spawns.
 4. Configuration entries may reference `MODEL_PROFILES` from `types.ts` instead of inline tuples. When an entry is a profile reference, read `types.ts` and expand the referenced profile to its provider/model/thinking tuple.
 5. Convert the resolved tuple to spawn fields: `provider`, `model`, and `thinkingLevel` (the configuration's `thinking` value maps directly to `thinkingLevel`).
 6. If the configuration cannot be read, the active name or a required assignment is missing, or a profile reference cannot be expanded, stop before any provider work and report the exact failure.
@@ -300,7 +300,7 @@ When a phase validator has already made one full correction pass and the phase s
 
 1. Collect the validator's concrete findings, the specific criteria still failing, and the repository state after its repair edits.
 2. Compose a targeted handoff for a senior agent (edit-authorized) that includes the phase contract, the validator's evidence, and the exact remaining defects.
-3. Launch one senior agent at the resolved senior-advisor model (the `executionAdvisor` assignment from the active configuration) to resolve the complex issue.
+3. Launch one senior agent at the resolved senior-advisor model (the `seniorAgent` assignment from the active configuration) to resolve the complex issue.
 4. After the senior agent completes, launch a fresh validator at the resolved validation model against the resulting state.
 5. If that validator returns PASS, checkpoint and proceed normally. If it returns BLOCKED again, report the concrete evidence and escalate to the user.
 

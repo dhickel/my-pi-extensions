@@ -25,4 +25,5 @@ export const liteSprintPlannerAgentConfiguration = {
 	phaseValidator: { model: MODEL_PROFILES.deepseekProMax },
 	integrationValidator: { model: MODEL_PROFILES.deepseekProMax },
 	executionAdvisor: { model: MODEL_PROFILES.deepseekProMax },
+	seniorAgent: { model: MODEL_PROFILES.deepseekProMax },
 } as const satisfies SprintPlannerAgentConfiguration;

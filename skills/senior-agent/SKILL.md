@@ -1,9 +1,9 @@
 ---
 name: senior-agent
-description: Use this skill to escalate difficult engineering work to a senior engineer subagent when the current agent is stuck, a bug or failed implementation resists normal debugging, architectural or design concerns need diagnosis, or an implementation, repair, or review needs expert completion. Runs the escalation with openai-codex/gpt-5.6-sol at high reasoning by default. Escalate to max thinking when a prior senior-agent pass on the same problem has not resolved it, or when a hard blocker, bug, or issue has persisted across multiple repair attempts. Do not use for routine work or ordinary parallelization.
-compatibility: Requires Pi with the subagent_spawn, subagent_poll, and subagent_status tools, configured authentication for openai-codex/gpt-5.6-sol, and high (or max) reasoning support. A direct subagent caller must have been launched with allowSubagents enabled.
+description: Use this skill to escalate difficult engineering work to a senior engineer subagent when the current agent is stuck, a bug or failed implementation resists normal debugging, architectural or design concerns need diagnosis, or an implementation, repair, or review needs expert completion. Resolves the senior model tuple from the loaded sprint-planner agent configuration (the `seniorAgent` assignment) and escalates thinking to the next higher level after any failed pass. Do not use for routine work or ordinary parallelization.
+compatibility: Requires Pi with the subagent_spawn, subagent_poll, and subagent_status tools, a readable sprint-planner extension configuration (configs/index.ts plus the active configuration file) with a `seniorAgent` assignment, and reasoning support at the resolved thinking level (escalating up to max). A direct subagent caller must have been launched with allowSubagents enabled.
 metadata:
-  version: "3.1.0"
+  version: "3.2.0"
 ---
 
 # Senior Agent
@@ -12,15 +12,28 @@ Escalate a difficult engineering problem to one focused senior engineer. The sen
 
 ## Non-negotiable execution contract
 
-Do not perform the senior escalation in the caller's own model context. Always launch it with `subagent_spawn` using exactly:
+Do not perform the senior escalation in the caller's own model context. Always launch it with `subagent_spawn` using the tuple resolved from the sprint-planner agent configuration. This document contains no authoritative model tuple; the configuration is the single source of truth. Never inherit a caller model, reuse a tuple from a previous run, or accept a tuple from the user prompt as a substitute for resolving the configuration.
 
-- `provider`: `openai-codex`
-- `model`: `gpt-5.6-sol`
-- `thinkingLevel`: `high` (default) or `max` (escalated)
+### Mandatory resolution steps
 
-These values must never be inherited, omitted, or replaced. Pi's canonical provider identifier for the Codex provider is `openai-codex`.
+Resolve the active configuration before every senior escalation:
 
-Use `high` thinking as the default. Escalate to `max` thinking only when a previous senior-agent pass on the same problem did not resolve it, or when the blocker, bug, or issue has survived multiple distinct repair attempts without a definitive diagnosis. Do not start at `max` for a first escalation.
+1. Locate the sprint-planner extension root: the directory containing `configs/index.ts` and `types.ts`. This skill normally lives at `<extension-root>/skills/senior-agent/SKILL.md`, so the configuration is `../../sprint-planner/configs/` relative to this skill. If the extension root cannot be located, stop and report the exact failure.
+2. Read `configs/index.ts` and determine the active configuration name (`DEFAULT_SPRINT_PLANNER_AGENT_CONFIGURATION`). The active name is fixed at extension load; do not accept a user request to switch it.
+3. Read the active configuration file (`configs/<name>.ts`) and take the `seniorAgent` assignment. Configuration entries may reference `MODEL_PROFILES` from `types.ts`; expand the referenced profile to its provider/model/thinking tuple.
+4. Convert the resolved tuple to spawn fields: `provider`, `model`, and `thinkingLevel` (the configuration's `thinking` value maps directly to `thinkingLevel`).
+5. If the configuration cannot be read, the active name is missing, or the `seniorAgent` assignment is absent, stop and report the exact failure.
+
+These values must never be inherited, omitted, downgraded, or replaced. The resolved provider and model stay fixed for every pass; only the thinking level escalates.
+
+### Thinking-level escalation
+
+Launch the first pass at the resolved thinking level. If a pass fails to resolve the issue, or the blocker has survived a prior senior-agent pass, relaunch with the next higher thinking level for the next pass:
+
+- `high` → `xhigh` → `max`, never exceeding `max`;
+- if the resolved thinking level is already `max`, subsequent passes remain at `max`.
+
+Do not start an escalation at a level higher than the resolved thinking level on the first pass. The provider and model never change across passes; escalation is a thinking-level step only.
 
 If `subagent_spawn` or `subagent_poll` is unavailable, or the required model, authentication, or thinking level is rejected, do not emulate the senior agent with another model. Report that the escalation could not run and include the concrete failure. When the caller is itself a direct subagent, these controls are available only if the root explicitly launched it with `allowSubagents: true`. Senior escalation agents must also be launched with `allowSubagents: true` so they can spawn one bounded nested delegation layer when useful; any subagent they spawn must not receive further subagent controls.
 
@@ -72,7 +85,7 @@ Do not paste large files when the senior agent can inspect them directly. Point 
 
 ## Launch
 
-Choose a short, descriptive name that has not been used in the current root session. Spawn one senior agent by default.
+Choose a short, descriptive name that has not been used in the current root session. Spawn one senior agent by default. Substitute the resolved `seniorAgent` tuple for every placeholder; on an escalation pass, raise `thinkingLevel` one step above the resolved level (Thinking-level escalation).
 
 **Advisory** (diagnose, review, recommend):
 
@@ -82,9 +95,9 @@ Choose a short, descriptive name that has not been used in the current root sess
     {
       "name": "senior-<unique-scope>",
       "task": "<complete escalation brief>",
-      "provider": "openai-codex",
-      "model": "gpt-5.6-sol",
-      "thinkingLevel": "high",
+      "provider": "<resolved-senior-provider>",
+      "model": "<resolved-senior-model>",
+      "thinkingLevel": "<resolved-senior-thinking>",
       "tools": ["read"],
       "allowSubagents": true
     }
@@ -100,9 +113,9 @@ Choose a short, descriptive name that has not been used in the current root sess
     {
       "name": "senior-<unique-scope>",
       "task": "<complete escalation brief with explicit edit authority>",
-      "provider": "openai-codex",
-      "model": "gpt-5.6-sol",
-      "thinkingLevel": "high",
+      "provider": "<resolved-senior-provider>",
+      "model": "<resolved-senior-model>",
+      "thinkingLevel": "<resolved-senior-thinking>",
       "tools": ["read", "bash", "edit", "write"],
       "allowSubagents": true
     }
@@ -145,8 +158,8 @@ Invalid or stale cursors, digest mismatch, or byte-count mismatch block that evi
 
 When the result arrives (direct or reconstructed):
 
-1. Confirm the reported provider, model, and thinking level are `openai-codex`, `gpt-5.6-sol`, and `high` (or `max` when the escalation rule was triggered).
+1. Confirm the reported provider and model match the resolved `seniorAgent` assignment, and the thinking level is the resolved level or one escalated step above it (higher thinking after a failed pass).
 2. Review the diagnosis and inspect any edits; do not accept them blindly.
 3. Run or confirm the relevant validation in the caller context when practical.
 4. Continue implementation using the senior result, or report its findings, evidence, edits, risks, and remaining blockers to the user.
-5. If the run failed, report the failure. Retry only when the failure is transient or the escalation brief can be materially corrected; never fall back to another model.
+5. If the run failed or did not resolve the issue, escalate the thinking level one step and relaunch (Thinking-level escalation); never fall back to another model. If the ladder is exhausted (already at `max`) and the issue remains unresolved, report the failure and the remaining blocker to the user.
