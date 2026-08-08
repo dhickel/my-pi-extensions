@@ -2,7 +2,7 @@ import { MODEL_PROFILES, type SprintPlannerAgentConfiguration } from "../types.t
 
 /**
  * Lite sprint-planner model configuration. Every agent is deepseek-v4-pro:max
- * except the implementation worker, which is deepseek-v4-pro:high.
+ * except the implementation worker, which is deepseek-v4-flash:max.
  */
 export const liteSprintPlannerAgentConfiguration = {
 	// ── Brainstorm ──
@@ -21,7 +21,7 @@ export const liteSprintPlannerAgentConfiguration = {
 	orchestrationReviewer: { model: MODEL_PROFILES.deepseekProMax },
 	phaseReviewer: { model: MODEL_PROFILES.deepseekProMax },
 	// ── Execution / orchestration ──
-	implementationWorker: { model: MODEL_PROFILES.deepseekProHigh },
+	implementationWorker: { model: MODEL_PROFILES.deepseekFlashMax },
 	phaseValidator: { model: MODEL_PROFILES.deepseekProMax },
 	integrationValidator: { model: MODEL_PROFILES.deepseekProMax },
 	seniorAgent: { model: MODEL_PROFILES.deepseekProMax },
