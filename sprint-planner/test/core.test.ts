@@ -273,10 +273,10 @@ test("workflow prompts remain raw and are never probed or expanded as paths", ()
 });
 
 test("agent configuration covers every sprint-planner role with exact tuples", () => {
-	assert.equal(DEFAULT_SPRINT_PLANNER_AGENT_CONFIGURATION, "lite");
+	assert.equal(DEFAULT_SPRINT_PLANNER_AGENT_CONFIGURATION, "default");
 	const agents = SPRINT_PLANNER_AGENT_CONFIGURATIONS.default;
 	const loaded = loadDefaultSprintPlannerAgentConfiguration();
-	assert.deepEqual(Object.keys(loaded), Object.keys(agents), "lite config covers every agent");
+	assert.deepEqual(Object.keys(loaded), Object.keys(agents), "default config covers every agent");
 	assert.deepEqual(Object.keys(agents), [
 		"roleRouter",
 		"brainstormWorker",
@@ -324,7 +324,7 @@ test("lite configuration assigns every agent to deepseek-v4-pro except the imple
 	assert.deepEqual(Object.keys(lite), Object.keys(SPRINT_PLANNER_AGENT_CONFIGURATIONS.default), "lite covers every agent");
 	for (const [key, entry] of Object.entries(lite)) {
 		if (key === "implementationWorker") {
-			assert.deepEqual(entry.model, { provider: "deepseek", model: "deepseek-v4-pro", thinking: "high" }, `${key} should be DeepSeek pro high`);
+			assert.deepEqual(entry.model, { provider: "deepseek", model: "deepseek-v4-flash", thinking: "max" }, `${key} should be DeepSeek flash max`);
 		} else {
 			assert.deepEqual(entry.model, { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" }, `${key} should be DeepSeek pro max`);
 		}
@@ -1037,7 +1037,7 @@ test("standalone advance plan performs orchestration corrective review", async (
 	const planDir = await new SprintPlannerEngine(runner).runStandaloneAdvancePlan({ projectRoot: root, internalDevPath: internal, id: "standalone-orch", directive: "Standalone plan" });
 	assert.deepEqual((await readdir(planDir)).sort(), ["concepts.md", "orchestration.md", "phase-01-first.md", "phase-02-second.md"]);
 	const orchReview = runner.requests.find((request) => request.role === "advanced orchestration reviewer")!;
-	assert.deepEqual(orchReview.model, SPRINT_PLANNER_AGENT_CONFIGURATIONS.lite.orchestrationReviewer.model);
+	assert.deepEqual(orchReview.model, SPRINT_PLANNER_AGENT_CONFIGURATIONS.default.orchestrationReviewer.model);
 	const summary = await readFile(path.join(internal, "reviews", "standalone-orch-advanced-plan-review.md"), "utf8");
 	assert.match(summary, /orchestration\.md/);
 });
