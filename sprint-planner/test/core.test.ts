@@ -828,6 +828,10 @@ test("package installs the orchestrate skill and exposes the complete agent-call
 	] as const) {
 		assert.match(extension, new RegExp(`name: "${tool}"[\\s\\S]*?executionMode: "sequential"[\\s\\S]*?${method}`));
 	}
+	assert.match(extension, /name: "sprint_poll"[\s\S]*?ctx\.hasPendingMessages\(\)[\s\S]*?terminalResults\.splice\(0\)/, "workflow polling must yield to queued root messages and consume terminal results");
+	assert.match(extension, /pi\.on\("agent_settled"[\s\S]*?sprint-planner-poll-reminder[\s\S]*?triggerTurn: true/, "active workflows must schedule another polling turn after root interaction");
+	assert.equal((extension.match(/started in the background\. Call sprint_poll until it completes\./g) ?? []).length, 3, "all agent-callable planning starts must return immediately with polling guidance");
+	assert.doesNotMatch(extension, /const target = await promise/, "agent-callable planning starts must not block on workflow completion");
 	assert.doesNotMatch(extension, /sprint_(?:ironout|advanceplan)[\s\S]{0,1000}(?:provider|model): Type\./);
 	assert.match(extension, /name: "sprint_validate_plan"[\s\S]*additionalProperties: false[\s\S]*details,\n\s*};/);
 	const executionTool = extension.slice(extension.indexOf('name: "sprint_execution_record"'), extension.indexOf('pi.registerCommand("sprint"'));

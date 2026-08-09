@@ -51,6 +51,16 @@ interface ActiveJob {
 	engine: SprintPlannerEngine;
 	promise: Promise<unknown>;
 	internalDevPath: string;
+	settled?: boolean;
+}
+
+interface WorkflowTerminalResult {
+	workflow: WorkflowName;
+	runId: string;
+	status: string;
+	result?: string;
+	error?: string;
+	progress?: EngineProgress;
 }
 
 async function entry(path: string) {
@@ -133,7 +143,10 @@ export default function sprintPlannerExtension(pi: ExtensionAPI) {
 	let rootUi: ExtensionUIContext | undefined;
 	let activeSprint: ActiveJob | undefined;
 	const standalone = new Map<WorkflowName, ActiveJob>();
+	const terminalResults: WorkflowTerminalResult[] = [];
+	const pollWaiters = new Set<() => void>();
 	const executionRecords = new Map<string, ExecutionRecordHandle>();
+	let blockingPoll = false;
 	let bound: Binding | undefined;
 	// This load-time snapshot resolves the active configuration (currently default) once at extension load.
 	const currentAgentConfiguration = loadDefaultSprintPlannerAgentConfiguration();
@@ -154,6 +167,37 @@ export default function sprintPlannerExtension(pi: ExtensionAPI) {
 		};
 	}
 
+	function runningJobs(): ActiveJob[] {
+		return [activeSprint, ...standalone.values()].filter((job): job is ActiveJob => Boolean(job && !job.settled));
+	}
+
+	function remainingJobs() {
+		return runningJobs().map((job) => ({
+			workflow: job.workflow,
+			runId: job.runId,
+			...(job.engine.progress ? { progress: job.engine.progress } : {}),
+		}));
+	}
+
+	function wakePollers(): void {
+		for (const wake of [...pollWaiters]) wake();
+	}
+
+	function waitForJobChange(timeoutMs: number): Promise<void> {
+		return new Promise((resolve) => {
+			let settled = false;
+			const finish = () => {
+				if (settled) return;
+				settled = true;
+				clearTimeout(timer);
+				pollWaiters.delete(finish);
+				resolve();
+			};
+			const timer = setTimeout(finish, timeoutMs);
+			pollWaiters.add(finish);
+		});
+	}
+
 	function makeEngine(workflow: WorkflowName, runId: string) {
 		return new SprintPlannerEngine(new PiWorkflowRunner({ events: pi.events }), callbacks(workflow, runId), currentAgentConfiguration);
 	}
@@ -167,9 +211,19 @@ export default function sprintPlannerExtension(pi: ExtensionAPI) {
 		}
 	}
 
-	async function notifyCompletion(job: ActiveJob, promise: Promise<unknown>) {
+	async function monitorCompletion(job: ActiveJob) {
 		try {
-			const result = await promise;
+			const result = await job.promise;
+			const status = job.workflow === "sprint" ? (result as SprintState).status : "completed";
+			terminalResults.push({
+				workflow: job.workflow,
+				runId: job.runId,
+				status,
+				result: job.workflow === "sprint"
+					? status === "completed" ? `.internal-dev/sprints/${job.runId}/manifest.md` : (result as SprintState).error
+					: String(result),
+				progress: job.engine.progress,
+			});
 			if (job.workflow === "sprint") {
 				const state = result as SprintState;
 				if (state.status === "completed") {
@@ -180,11 +234,20 @@ export default function sprintPlannerExtension(pi: ExtensionAPI) {
 				rootUi?.notify(`/${job.workflow} ${job.runId} completed: ${String(result)}`, "info");
 			}
 		} catch (error) {
+			terminalResults.push({
+				workflow: job.workflow,
+				runId: job.runId,
+				status: "failed",
+				error: error instanceof Error ? error.message : String(error),
+				progress: job.engine.progress,
+			});
 			rootUi?.notify(`/${job.workflow} ${job.runId} stopped: ${error instanceof Error ? error.message : String(error)}`, "error");
 		} finally {
+			job.settled = true;
 			if (job.workflow === "sprint" && activeSprint === job && !job.engine.retainedLeaseHandle) activeSprint = undefined;
 			if (standalone.get(job.workflow) === job) standalone.delete(job.workflow);
 			if (!activeSprint && standalone.size === 0) updateFooter();
+			wakePollers();
 		}
 	}
 
@@ -254,7 +317,7 @@ export default function sprintPlannerExtension(pi: ExtensionAPI) {
 				const job: ActiveJob = { workflow: "sprint", runId, engine, promise, internalDevPath: location.internalDevPath };
 				activeSprint = job;
 				if (engine.progress) updateFooter(engine.progress);
-				void notifyCompletion(job, promise);
+				void monitorCompletion(job);
 				await engine.initialized;
 				appendBinding({ kind: "current", runId, internalDevPath: location.internalDevPath, timestamp: new Date().toISOString() });
 				ctx.ui.notify(`Resuming sprint ${runId} from its first incomplete or invalid checkpoint.`, "info");
@@ -352,7 +415,7 @@ export default function sprintPlannerExtension(pi: ExtensionAPI) {
 			const job: ActiveJob = { workflow: "sprint", runId, engine, promise, internalDevPath: location.internalDevPath };
 			activeSprint = job;
 			if (engine.progress) updateFooter(engine.progress);
-			void notifyCompletion(job, promise);
+			void monitorCompletion(job);
 			await engine.initialized;
 			appendBinding({ kind: "current", runId, internalDevPath: location.internalDevPath, timestamp: new Date().toISOString() });
 			ctx.ui.notify(`Started sprint ${runId} in the background. Use /sprint status or /sprint pause while continuing this root session.`, "info");
@@ -395,7 +458,7 @@ export default function sprintPlannerExtension(pi: ExtensionAPI) {
 			const job: ActiveJob = { workflow, runId: id, engine, promise, internalDevPath: location.internalDevPath };
 			standalone.set(workflow, job);
 			if (engine.progress) updateFooter(engine.progress);
-			void notifyCompletion(job, promise);
+			void monitorCompletion(job);
 			ctx.ui.notify(`Started /${workflow} ${id} in the background. Use /${workflow} status or /${workflow} cancel.`, "info");
 		} catch (error) {
 			ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
@@ -405,9 +468,9 @@ export default function sprintPlannerExtension(pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "sprint_brainstorm",
 		label: "Run sprint brainstorm",
-		description: BRAINSTORM_TOOL_DESCRIPTION,
+		description: `${BRAINSTORM_TOOL_DESCRIPTION} Starts in the background; use sprint_poll until it completes.`,
 		promptSnippet: "Run the engine-owned brainstorm with mandatory all-to-all cross-review before synthesis",
-		promptGuidelines: [...BRAINSTORM_TOOL_GUIDELINES],
+		promptGuidelines: [...BRAINSTORM_TOOL_GUIDELINES, "After starting the workflow, call sprint_poll repeatedly until it returns the terminal result. Handle queued user input first, then return to polling."],
 		parameters: Type.Object(
 			{
 				prompt: Type.String({ minLength: 1, maxLength: 2_000_000, description: "The authoritative brainstorming prompt." }),
@@ -418,6 +481,7 @@ export default function sprintPlannerExtension(pi: ExtensionAPI) {
 		executionMode: "sequential",
 		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			rootUi = ctx.ui;
+			if (signal?.aborted) throw new Error("The brainstorm start was cancelled.");
 			if (standalone.has("brainstorm")) throw new Error("A /brainstorm or sprint_brainstorm workflow is already running.");
 			if (!ctx.isProjectTrusted()) throw new Error("Trust this project before starting a workflow.");
 			const location = await locateStore(ctx.cwd);
@@ -428,29 +492,20 @@ export default function sprintPlannerExtension(pi: ExtensionAPI) {
 			const job: ActiveJob = { workflow: "brainstorm", runId: id, engine, promise, internalDevPath: location.internalDevPath };
 			standalone.set("brainstorm", job);
 			if (engine.progress) updateFooter(engine.progress);
-			const abort = () => void engine.cancel().catch(() => undefined);
-			signal.addEventListener("abort", abort, { once: true });
-			if (signal.aborted) abort();
-			try {
-				const target = await promise;
-				return {
-					content: [{ type: "text" as const, text: `Brainstorm ${id} completed after mandatory findings and cross-review rounds: ${target}` }],
-					details: { id, target, crossReviewRequired: true },
-				};
-			} finally {
-				signal.removeEventListener("abort", abort);
-				if (standalone.get("brainstorm") === job) standalone.delete("brainstorm");
-				if (!activeSprint && standalone.size === 0) updateFooter();
-			}
+			void monitorCompletion(job);
+			return {
+				content: [{ type: "text" as const, text: `Brainstorm ${id} started in the background. Call sprint_poll until it completes.` }],
+				details: { id, status: "started", crossReviewRequired: true },
+			};
 		},
 	});
 
 	pi.registerTool({
 		name: "sprint_ironout",
 		label: "Run sprint ironout",
-		description: "Run the engine-owned autonomous ironout author and corrective reviewer for an input artifact. The engine resolves every agent from its agent configuration; callers cannot supply models.",
+		description: "Start the engine-owned autonomous ironout author and corrective reviewer in the background. The engine resolves every agent from its agent configuration; callers cannot supply models. Use sprint_poll until it completes.",
 		promptSnippet: "Turn a brainstorm artifact into a corrected handoff using engine-owned model routes",
-		promptGuidelines: ["Use sprint_ironout after sprint_brainstorm instead of manually selecting ironout author or reviewer models."],
+		promptGuidelines: ["Use sprint_ironout after sprint_brainstorm instead of manually selecting ironout author or reviewer models.", "After starting the workflow, call sprint_poll repeatedly until it returns the terminal result. Handle queued user input first, then return to polling."],
 		parameters: Type.Object(
 			{
 				path: Type.String({ minLength: 1, maxLength: 4096, description: "Path to a brainstorm output directory or other handoff input artifact. Relative paths resolve from the current Pi working directory." }),
@@ -460,6 +515,7 @@ export default function sprintPlannerExtension(pi: ExtensionAPI) {
 		executionMode: "sequential",
 		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			rootUi = ctx.ui;
+			if (signal?.aborted) throw new Error("The ironout start was cancelled.");
 			if (standalone.has("ironout")) throw new Error("A /ironout or sprint_ironout workflow is already running.");
 			if (!ctx.isProjectTrusted()) throw new Error("Trust this project before starting a workflow.");
 			const location = await locateStore(ctx.cwd);
@@ -470,29 +526,20 @@ export default function sprintPlannerExtension(pi: ExtensionAPI) {
 			const job: ActiveJob = { workflow: "ironout", runId: id, engine, promise, internalDevPath: location.internalDevPath };
 			standalone.set("ironout", job);
 			if (engine.progress) updateFooter(engine.progress);
-			const abort = () => void engine.cancel().catch(() => undefined);
-			signal.addEventListener("abort", abort, { once: true });
-			if (signal.aborted) abort();
-			try {
-				const target = await promise;
-				return {
-					content: [{ type: "text" as const, text: `Ironout ${id} completed with engine-routed author and corrective review: ${target}` }],
-					details: { id, target },
-				};
-			} finally {
-				signal.removeEventListener("abort", abort);
-				if (standalone.get("ironout") === job) standalone.delete("ironout");
-				if (!activeSprint && standalone.size === 0) updateFooter();
-			}
+			void monitorCompletion(job);
+			return {
+				content: [{ type: "text" as const, text: `Ironout ${id} started in the background. Call sprint_poll until it completes.` }],
+				details: { id, status: "started" },
+			};
 		},
 	});
 
 	pi.registerTool({
 		name: "sprint_advanceplan",
 		label: "Run sprint advance plan",
-		description: "Run the engine-owned advanced plan author, concept review, orchestration review, and phase reviews for a handoff artifact. The engine resolves every agent from its default advanced-planning configuration; callers cannot supply models.",
+		description: "Start the engine-owned advanced plan author, concept review, orchestration review, and phase reviews in the background. The engine resolves every agent from its default advanced-planning configuration; callers cannot supply models. Use sprint_poll until it completes.",
 		promptSnippet: "Turn a corrected handoff into a fully reviewed phased plan using the engine's agent configuration",
-		promptGuidelines: ["Use sprint_advanceplan after sprint_ironout instead of manually selecting advanced planning or review models."],
+		promptGuidelines: ["Use sprint_advanceplan after sprint_ironout instead of manually selecting advanced planning or review models.", "After starting the workflow, call sprint_poll repeatedly until it returns the terminal result. Handle queued user input first, then return to polling."],
 		parameters: Type.Object(
 			{
 				path: Type.String({ minLength: 1, maxLength: 4096, description: "Path to the corrected handoff Markdown artifact. Relative paths resolve from the current Pi working directory." }),
@@ -502,6 +549,7 @@ export default function sprintPlannerExtension(pi: ExtensionAPI) {
 		executionMode: "sequential",
 		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			rootUi = ctx.ui;
+			if (signal?.aborted) throw new Error("The advanced-plan start was cancelled.");
 			if (standalone.has("advanceplan")) throw new Error("An /advanceplan or sprint_advanceplan workflow is already running.");
 			if (!ctx.isProjectTrusted()) throw new Error("Trust this project before starting a workflow.");
 			const location = await locateStore(ctx.cwd);
@@ -512,20 +560,62 @@ export default function sprintPlannerExtension(pi: ExtensionAPI) {
 			const job: ActiveJob = { workflow: "advanceplan", runId: id, engine, promise, internalDevPath: location.internalDevPath };
 			standalone.set("advanceplan", job);
 			if (engine.progress) updateFooter(engine.progress);
-			const abort = () => void engine.cancel().catch(() => undefined);
-			signal.addEventListener("abort", abort, { once: true });
-			if (signal.aborted) abort();
-			try {
-				const target = await promise;
-				return {
-					content: [{ type: "text" as const, text: `Advanced plan ${id} completed with concept, orchestration, and phase reviews: ${target}` }],
-					details: { id, target },
-				};
-			} finally {
-				signal.removeEventListener("abort", abort);
-				if (standalone.get("advanceplan") === job) standalone.delete("advanceplan");
-				if (!activeSprint && standalone.size === 0) updateFooter();
+			void monitorCompletion(job);
+			return {
+				content: [{ type: "text" as const, text: `Advanced plan ${id} started in the background. Call sprint_poll until it completes.` }],
+				details: { id, status: "started" },
+			};
+		},
+	});
+
+	pi.registerTool({
+		name: "sprint_poll",
+		label: "Poll sprint workflows",
+		description: "Wait for background Sprint Planner workflows and consume completed results. Returns early for a terminal result, queued user input, cancellation, or timeout. Continue polling while workflows remain.",
+		promptSnippet: "Wait for background Sprint Planner workflow progress or completion",
+		promptGuidelines: [
+			"After starting any Sprint Planner workflow, call sprint_poll until no workflows remain.",
+			"If polling wakes for queued user input, handle that message and then return to sprint_poll.",
+		],
+		parameters: Type.Object(
+			{ timeoutSeconds: Type.Optional(Type.Number({ minimum: 0, maximum: 3_600, default: 60 })) },
+			{ additionalProperties: false },
+		),
+		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+			rootUi = ctx.ui;
+			const timeoutSeconds = params.timeoutSeconds ?? 60;
+			if (!Number.isFinite(timeoutSeconds) || timeoutSeconds < 0 || timeoutSeconds > 3_600) {
+				throw new Error("timeoutSeconds must be between 0 and 3600.");
 			}
+			if (blockingPoll) throw new Error("A blocking sprint_poll is already active.");
+
+			let wakeReason: "result" | "queued_message" | "aborted" | "timeout" | "immediate" = "immediate";
+			if (terminalResults.length === 0 && runningJobs().length > 0 && timeoutSeconds > 0) {
+				blockingPoll = true;
+				wakeReason = "timeout";
+				const deadline = Date.now() + timeoutSeconds * 1_000;
+				try {
+					while (Date.now() < deadline) {
+						if (signal?.aborted) { wakeReason = "aborted"; break; }
+						if (ctx.hasPendingMessages()) { wakeReason = "queued_message"; break; }
+						if (terminalResults.length > 0) { wakeReason = "result"; break; }
+						await waitForJobChange(Math.min(100, Math.max(0, deadline - Date.now())));
+					}
+					if (wakeReason === "timeout" && terminalResults.length > 0) wakeReason = "result";
+				} finally {
+					blockingPoll = false;
+				}
+			} else if (terminalResults.length > 0) {
+				wakeReason = "result";
+			}
+
+			const results = terminalResults.splice(0);
+			const remaining = remainingJobs();
+			const payload = { wakeReason, results, remaining };
+			return {
+				content: [{ type: "text" as const, text: JSON.stringify(payload, null, 2) }],
+				details: payload,
+			};
 		},
 	});
 
@@ -734,6 +824,20 @@ export default function sprintPlannerExtension(pi: ExtensionAPI) {
 		}
 	});
 
+	pi.on("agent_settled", async () => {
+		if (runningJobs().length === 0 && terminalResults.length === 0) return;
+		pi.sendMessage(
+			{
+				customType: "sprint-planner-poll-reminder",
+				content:
+					"Sprint Planner workflow work or an undelivered terminal result remains. Call sprint_poll now and continue polling until no workflows remain. Handle any queued user message first when appropriate, then return to polling.",
+				display: false,
+				details: { active: runningJobs().length, undelivered: terminalResults.length },
+			},
+			{ triggerTurn: true, deliverAs: "followUp" },
+		);
+	});
+
 	pi.on("session_shutdown", async () => {
 		if (activeSprint) {
 			try {
@@ -753,6 +857,8 @@ export default function sprintPlannerExtension(pi: ExtensionAPI) {
 			}
 		}
 		executionRecords.clear();
+		terminalResults.length = 0;
+		wakePollers();
 		try {
 			rootUi?.setStatus(FOOTER_KEY, undefined);
 		} catch {}

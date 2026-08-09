@@ -39,15 +39,16 @@ After installation or source updates, run `/reload` or restart Pi.
 
 Bare start commands open Pi's editor. Input may be a plain request, pasted material, a path, or natural language referring to paths. The command layer preserves it as prompt text; planning agents interpret references with read-only project tools.
 
-Standalone commands support `status` and `cancel`, use in-memory child sessions, and publish only after all planning model work succeeds.
+Standalone commands support `status` and `cancel`, use in-memory child sessions, and publish only after all planning model work succeeds. Commands run in the background so the main agent remains interactive.
 
 ## Agent-callable planning tools
 
-- `sprint_brainstorm` — accepts an authoritative prompt and optional worker count (2–8), then returns the published brainstorm directory. Mandatory same-session all-to-all cross-review before synthesis.
-- `sprint_ironout` — accepts a brainstorm directory or other input artifact path, runs autonomous authoring and corrective review via engine-owned model routes, and returns the corrected handoff path.
-- `sprint_advanceplan` — accepts a corrected handoff path, runs concept review → orchestration review → per-phase reviews via engine-owned model routes, and returns the reviewed plan directory.
+- `sprint_brainstorm` — accepts an authoritative prompt and optional worker count (2–8), starts the mandatory same-session findings and all-to-all cross-review lifecycle in the background, and returns its run id immediately.
+- `sprint_ironout` — accepts a brainstorm directory or other input artifact path, starts autonomous authoring and corrective review via engine-owned model routes in the background, and returns its run id immediately.
+- `sprint_advanceplan` — accepts a corrected handoff path, starts concept review → orchestration review → per-phase reviews via engine-owned model routes in the background, and returns its run id immediately.
+- `sprint_poll` — waits for background planning completion, consumes terminal results, and reports remaining workflows. It wakes early for queued user input so the main agent can answer, then a hidden turn-end reminder directs it back to polling until no workflow or undelivered result remains.
 
-Together with `sprint_validate_plan` and `sprint_execution_record`, these are the extension's five agent-callable tools. The three planning tools are sequential long-running tools. `sprint_ironout` and `sprint_advanceplan` expose no model parameters: the engine supplies fixed routes, with advanced-plan agents resolved from the loaded default configuration. Relative input paths resolve from Pi's current working directory; a leading `@` is accepted for parity.
+Together with `sprint_validate_plan` and `sprint_execution_record`, these are the extension's six agent-callable tools. The three planning start tools are non-blocking: after starting one, the root calls `sprint_poll` repeatedly until it receives the terminal output. Poll timeouts continue through automatic follow-up turns; queued user messages take priority without cancelling the workflow, and polling resumes afterward. `sprint_ironout` and `sprint_advanceplan` expose no model parameters: the engine supplies fixed routes, with advanced-plan agents resolved from the loaded default configuration. Relative input paths resolve from Pi's current working directory; a leading `@` is accepted for parity.
 
 ## Agent model configuration
 
