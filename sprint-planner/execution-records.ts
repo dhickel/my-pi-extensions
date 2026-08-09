@@ -9,7 +9,7 @@ import {
 	removeOwnedFile,
 	sha256,
 } from "./artifacts.ts";
-import { inspectPlanDirectory, type PlanValidationResult } from "./validation.ts";
+import { inspectPlanDirectory, parsePlanModelAssignments } from "./validation.ts";
 import {
 	acquireLease,
 	assertValidRunDirectory,
@@ -41,6 +41,7 @@ import {
 	type ModelTuple,
 	type PhaseEvidence,
 	type PhaseExecutionStatus,
+	type PlanValidationResult,
 	type ReadableExecutionRecord,
 	type ReadOnlyExecutionRecordV1,
 	type RunLeaseHandle,
@@ -79,6 +80,13 @@ function nonEmpty(value: string, label: string): string {
 }
 function exactTuple(actual: ModelTuple, expected: ModelTuple): boolean {
 	return actual.provider === expected.provider && actual.model === expected.model && actual.thinking === expected.thinking;
+}
+function validTuple(value: unknown): value is ModelTuple {
+	if (!value || typeof value !== "object") return false;
+	const tuple = value as Partial<ModelTuple>;
+	return typeof tuple.provider === "string" && /^[a-z0-9][a-z0-9-]*$/.test(tuple.provider)
+		&& typeof tuple.model === "string" && /^[a-z0-9][a-z0-9_.-]*$/.test(tuple.model)
+		&& ["off", "minimal", "low", "medium", "high", "xhigh", "max"].includes(String(tuple.thinking));
 }
 function validTimestamp(value: unknown): value is string {
 	return typeof value === "string" && value.length > 0 && Number.isFinite(Date.parse(value));
@@ -234,9 +242,18 @@ function freezeOrchestration(validation: PlanValidationResult, orchestration: st
 	}
 	if (![dependencies, goals, targets, waveAssignments].every((map) => phases.every((phase) => Object.hasOwn(map, phase)))) throw new Error("Validated orchestration metadata could not be frozen completely.");
 	const waves = Object.fromEntries(phases.map((phase) => [phase, waveAssignments[phase]]));
+	const models = parsePlanModelAssignments(orchestration, phases);
+	const phaseImplementationModels = Object.fromEntries(phases.map((phase) => [
+		phase,
+		{ ...(models.phaseAssignments[phase] === "basic" ? models.basicImplementationModel : models.advancedImplementationModel) },
+	]));
 	return {
 		scopeSize: validation.metadata.scopeSize!, phases, dependencies, waves, goals, targets,
-		implementationModel: { ...IMPL_TUPLE }, validationModel: { ...VAL_TUPLE },
+		implementationModel: { ...models.advancedImplementationModel },
+		basicImplementationModel: { ...models.basicImplementationModel },
+		advancedImplementationModel: { ...models.advancedImplementationModel },
+		phaseImplementationModels,
+		validationModel: { ...models.validationModel },
 	};
 }
 
@@ -327,7 +344,7 @@ function parseCommonRecord(record: Record<string, unknown>, runDirectory: string
 	try { sourceIdentity(source.sourcePlanPath, source.sourcePlanningRunId); }
 	catch { throw new Error("Execution source planning-run identity is malformed."); }
 	const frozen = record.frozen as FrozenOrchestrationSnapshot | undefined;
-	if (!frozen || !Array.isArray(frozen.phases) || !exactTuple(frozen.implementationModel, IMPL_TUPLE) || !exactTuple(frozen.validationModel, VAL_TUPLE)) throw new Error("Execution record has malformed frozen orchestration.");
+	if (!frozen || !Array.isArray(frozen.phases) || !validTuple(frozen.implementationModel) || !validTuple(frozen.validationModel)) throw new Error("Execution record has malformed frozen orchestration.");
 	if (new Set(frozen.phases).size !== frozen.phases.length || frozen.phases.length === 0) throw new Error("Frozen phase ledger is invalid.");
 	for (const map of [frozen.dependencies, frozen.targets, frozen.goals, frozen.waves]) {
 		if (!map || !sameStringSet(Object.keys(map), frozen.phases)) throw new Error("Frozen orchestration maps must contain exactly the phase ledger in order.");
@@ -337,6 +354,15 @@ function parseCommonRecord(record: Record<string, unknown>, runDirectory: string
 		if (new Set(frozen.dependencies[phase]).size !== frozen.dependencies[phase].length || new Set(frozen.targets[phase]).size !== frozen.targets[phase].length) throw new Error("Frozen phase metadata contains duplicates.");
 		for (const target of frozen.targets[phase]) if (assertSafeRelativePath(target) !== target) throw new Error("Frozen write target is not canonical.");
 		for (const dependency of frozen.dependencies[phase]) if (!frozen.phases.includes(dependency) || frozen.waves[dependency] >= frozen.waves[phase]) throw new Error("Frozen dependency or wave ordering is impossible.");
+	}
+	const hasPlanOwnedRoutes = frozen.basicImplementationModel !== undefined || frozen.advancedImplementationModel !== undefined || frozen.phaseImplementationModels !== undefined;
+	if (hasPlanOwnedRoutes) {
+		if (!validTuple(frozen.basicImplementationModel) || !validTuple(frozen.advancedImplementationModel) || !frozen.phaseImplementationModels || !sameStringSet(Object.keys(frozen.phaseImplementationModels), frozen.phases)) throw new Error("Frozen plan-owned implementation routes are incomplete.");
+		if (exactTuple(frozen.basicImplementationModel, frozen.advancedImplementationModel)) throw new Error("Frozen basic and advanced implementation routes must be distinct.");
+		for (const phase of frozen.phases) {
+			const assigned = frozen.phaseImplementationModels[phase];
+			if (!validTuple(assigned) || (!exactTuple(assigned, frozen.basicImplementationModel) && !exactTuple(assigned, frozen.advancedImplementationModel))) throw new Error(`Frozen implementation assignment is invalid for ${phase}.`);
+		}
 	}
 	const waveNumbers = [...new Set(Object.values(frozen.waves))].sort((left, right) => left - right);
 	if (waveNumbers.some((wave, index) => wave !== index + 1)) throw new Error("Frozen execution waves are not contiguous.");
@@ -426,16 +452,18 @@ function parseV2Record(record: Record<string, unknown>, runDirectory: string, ru
 	if (!Array.isArray(rawPhases) || !sameStringSet(rawPhases.map((phase) => String(phase.phase)), common.frozen.phases)) throw new Error("Execution phase evidence does not match the frozen ledger.");
 	let transitions = 0;
 	const phases: PhaseEvidence[] = rawPhases.map((phase) => {
-		const implementation = phase.implementation ? parseEvidence(phase.implementation, IMPL_TUPLE) as ExecutionEvidence : undefined;
+		const phaseName = String(phase.phase);
+		const expectedImplementation = common.frozen.phaseImplementationModels?.[phaseName] ?? common.frozen.implementationModel;
+		const implementation = phase.implementation ? parseEvidence(phase.implementation, expectedImplementation) as ExecutionEvidence : undefined;
 		if (implementation) transitions++;
 		if (!Array.isArray(phase.validations)) throw new Error("Execution phase validation history is malformed.");
 		if (phase.validations.length > 0 && !implementation) throw new Error("Validator evidence precedes implementation evidence.");
-		const validations = phase.validations.map((validation, index) => parseEvidence(validation, VAL_TUPLE, { validator: true, attempt: index + 1 }) as ValidationEvidence);
+		const validations = phase.validations.map((validation, index) => parseEvidence(validation, common.frozen.validationModel, { validator: true, attempt: index + 1 }) as ValidationEvidence);
 		transitions += validations.length;
 		return { phase: String(phase.phase), ...(implementation ? { implementation } : {}), validations };
 	});
 	if (!Array.isArray(record.integrationValidations)) throw new Error("Integration validation history is malformed.");
-	const integrationValidations = record.integrationValidations.map((validation, index) => parseEvidence(validation, VAL_TUPLE, { validator: true, attempt: index + 1 }) as ValidationEvidence);
+	const integrationValidations = record.integrationValidations.map((validation, index) => parseEvidence(validation, common.frozen.validationModel, { validator: true, attempt: index + 1 }) as ValidationEvidence);
 	transitions += integrationValidations.length;
 	if (integrationValidations.length > 0 && !phases.every((phase) => latestValidation(phase)?.verdict === "PASS")) throw new Error("Integration evidence requires every phase's latest validation to PASS.");
 	const firstIntegrationAt = integrationValidations[0] ? Date.parse(integrationValidations[0].timestamp) : undefined;
@@ -688,7 +716,7 @@ export async function checkpointExecutionRecord(
 			const observed = await observeChangedPaths(record, handle.runId, changedPaths, record.frozen.targets[canonicalPhase]);
 			outsideDeclaredTargets = observed.outsideDeclaredTargets;
 			evidence.implementation = {
-				agentModel: { ...IMPL_TUPLE }, report, changedFiles: observed.observations.map((item) => item.path),
+				agentModel: { ...(record.frozen.phaseImplementationModels?.[canonicalPhase] ?? record.frozen.implementationModel) }, report, changedFiles: observed.observations.map((item) => item.path),
 				changedFileObservations: observed.observations, outsideDeclaredTargets: [...outsideDeclaredTargets], timestamp,
 			};
 		} else if (type === "phase_validation") {
@@ -703,7 +731,7 @@ export async function checkpointExecutionRecord(
 			const observed = await observeChangedPaths(record, handle.runId, changedPaths, record.frozen.targets[canonicalPhase]);
 			outsideDeclaredTargets = observed.outsideDeclaredTargets;
 			evidence.validations.push({
-				agentModel: { ...VAL_TUPLE }, attempt: evidence.validations.length + 1, verdict, report,
+				agentModel: { ...record.frozen.validationModel }, attempt: evidence.validations.length + 1, verdict, report,
 				changedFiles: observed.observations.map((item) => item.path), changedFileObservations: observed.observations,
 				outsideDeclaredTargets: [...outsideDeclaredTargets], timestamp,
 			});
@@ -715,7 +743,7 @@ export async function checkpointExecutionRecord(
 			const observed = await observeChangedPaths(record, handle.runId, changedPaths, targets);
 			outsideDeclaredTargets = observed.outsideDeclaredTargets;
 			record.integrationValidations.push({
-				agentModel: { ...VAL_TUPLE }, attempt: record.integrationValidations.length + 1, verdict, report,
+				agentModel: { ...record.frozen.validationModel }, attempt: record.integrationValidations.length + 1, verdict, report,
 				changedFiles: observed.observations.map((item) => item.path), changedFileObservations: observed.observations,
 				outsideDeclaredTargets: [...outsideDeclaredTargets], timestamp,
 			});

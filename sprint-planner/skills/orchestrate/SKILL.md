@@ -1,37 +1,30 @@
 ---
 name: orchestrate
-description: Execute complex workflows, raw task directives, checklists, or phased plan files with dependency-aware sequential or safe parallel subagents. Resolves every delegated model tuple from the currently loaded sprint-planner agent configuration before any provider work. Use when the user asks to orchestrate, execute, or implement a multi-phase or long-running workflow.
-compatibility: Requires Pi with subagent_spawn, subagent_poll, subagent_status, and subagent_cancel; a readable sprint-planner extension configuration (configs/index.ts plus the active configuration file); sprint_validate_plan and sprint_execution_record tools.
+description: Execute validated advanced plans with dependency-aware sequential or safe parallel subagents. Takes each basic or advanced implementation tuple from the plan's validated per-phase assignment, never from sprint-planner configuration lookup. Use when the user asks to orchestrate, execute, or implement a multi-phase or long-running workflow.
+compatibility: Requires Pi with subagent_spawn, subagent_poll, subagent_status, and subagent_cancel; sprint_validate_plan and sprint_execution_record tools; a readable sprint-planner configuration only for optional senior escalation.
 metadata:
-  version: "4.3.0"
+  version: "5.0.0"
 ---
 
 # Orchestrate
 
-Interpret and execute an authoritative workflow supplied by the user. The input may be prose, a checklist, pasted plan content, one or more plan files, or a generated plan directory. Support long-running dependency chains and safe parallel phases without changing accepted scope.
+Execute an authoritative validated advanced-plan directory supplied by the user. If the input is prose, a checklist, pasted legacy plan content, or individual plan files without the validated model contract, route it through advanced planning before implementation. Support long-running dependency chains and safe parallel phases without changing accepted scope.
 
-## Model resolution contract
+## Plan-owned model contract
 
-Every delegated model tuple must be resolved from the currently loaded sprint-planner agent configuration before any provider work. This document contains no authoritative model tuples; the configuration is the single source of truth. Never inherit a caller model, reuse a tuple from a previous run, or accept a tuple from the user prompt as a substitute for resolving the configuration.
+The validated advanced plan is the sole authority for implementation and validation tuples. Never look up `basicImplementer`, `advancedImplementer`, or any former implementation-worker assignment in sprint-planner configuration during orchestration. Never inherit a caller model, reuse a tuple from another run, or accept an unvalidated tuple from user prose.
 
-### Mandatory resolution steps
+After `sprint_validate_plan` returns `valid: true`, read `orchestration.md` and consume its exact `Model Assignments` contract:
 
-Resolve the active configuration before the preflight and before every implementation delegation:
+1. Read the `Basic Implementer`, `Advanced Implementer`, and `Validation` tuples hard-coded by advanced planning.
+2. Read the exactly-one `basic` or `advanced` assignment for every phase. The plan validator guarantees phase-order coverage, allowed labels, tuple syntax, distinct basic/advanced profiles, and final-integration agreement.
+3. Map each phase label to its matching plan-owned tuple. The parent phase assignment applies to every explicit lettered subphase.
+4. Convert a selected tuple to spawn fields: `provider`, `model`, and `thinkingLevel` (`thinking` maps directly to `thinkingLevel`).
+5. Confirm the execution record freezes the same per-phase tuples returned from the validated plan. Any mismatch or missing assignment is a permanent plan defect; stop before provider work.
 
-1. Locate the sprint-planner extension root: the directory containing `configs/index.ts` and `types.ts`. This skill normally lives at `<extension-root>/skills/orchestrate/SKILL.md`, so the configuration is `../../configs/` relative to this skill. If the extension root cannot be located, stop before any provider work and report the exact failure.
-2. Read `configs/index.ts` and determine the active configuration name (`DEFAULT_SPRINT_PLANNER_AGENT_CONFIGURATION`) and the loader (`loadDefaultSprintPlannerAgentConfiguration`). The active name is fixed at extension load; do not accept a user request to switch it.
-3. Read the active configuration file (`configs/<name>.ts`) and take the agent assignments:
-   - `implementationWorker` — the model for every implementation-agent spawn;
-   - `phaseValidator` — the model for every post-phase review-and-repair spawn;
-   - `integrationValidator` — the model for the final integration spawn;
-   - `seniorAgent` — the model for senior escalation spawns.
-4. Configuration entries may reference `MODEL_PROFILES` from `types.ts` instead of inline tuples. When an entry is a profile reference, read `types.ts` and expand the referenced profile to its provider/model/thinking tuple.
-5. Convert the resolved tuple to spawn fields: `provider`, `model`, and `thinkingLevel` (the configuration's `thinking` value maps directly to `thinkingLevel`).
-6. If the configuration cannot be read, the active name or a required assignment is missing, or a profile reference cannot be expanded, stop before any provider work and report the exact failure.
+For raw prose, checklists, pasted legacy plans, or single phase files that lack this validated contract, do not choose or infer an implementation model. Route the input through advanced planning first, then orchestrate the resulting validated plan.
 
-Never inherit, omit, downgrade, clamp, or substitute any tuple — every spawn must explicitly supply the resolved provider, model, and thinkingLevel fields. If a required model, authentication, or thinking level is unavailable, stop before implementation and report the exact failure.
-
-Implementation self-reports, root inspection, and test output do not replace independent phase validation by the resolved validation model.
+Never inherit, omit, downgrade, clamp, or substitute a plan-owned tuple. If an assigned model, authentication, or thinking level is unavailable, stop before implementation and report the exact failure. Implementation self-reports, root inspection, and test output do not replace independent phase validation by the plan-owned validation model.
 
 ## Global estimate prohibition
 
@@ -47,11 +40,11 @@ Every agent receives exact tool sets:
   ```json
   "tools": []
   ```
-- **Implementers (resolved implementation model)**:
+- **Implementers (plan-assigned basic or advanced model)**:
   ```json
   "tools": ["read", "bash", "edit", "write"]
   ```
-- **Phase/integration validators (resolved validation model)**:
+- **Phase/integration validators (plan-owned validation model)**:
   ```json
   "tools": ["read", "bash", "edit", "write"]
   ```
@@ -69,34 +62,42 @@ No child receives subagent, sprint validation, sprint execution, user-questionin
 
 ## Preflight
 
-Run this preflight only after authoritative input resolution, successful generated-plan validation when applicable, accepted execution-record `start`, and resolution of the active model configuration (Model resolution contract). Before any implementation edit or other provider work, launch one atomic `subagent_spawn` batch containing two uniquely named no-op agents — one at the resolved implementation tuple and one at the resolved validation tuple:
+Run this preflight only after successful advanced-plan validation, accepted execution-record `start`, and extraction of its plan-owned model assignments. Before any implementation edit or other provider work, launch one atomic `subagent_spawn` batch containing one uniquely named no-op agent for every distinct implementation tuple assigned to at least one phase, plus one at the plan-owned validation tuple. The example below shows both implementation profiles; omit an unused profile:
 
 ```json
 {
   "agents": [
     {
-      "name": "preflight-impl-<unique>",
+      "name": "preflight-basic-<unique>",
       "task": "Return READY without reading or modifying the project.",
-      "provider": "<resolved-implementation-provider>",
-      "model": "<resolved-implementation-model>",
-      "thinkingLevel": "<resolved-implementation-thinking>",
+      "provider": "<plan-basic-provider>",
+      "model": "<plan-basic-model>",
+      "thinkingLevel": "<plan-basic-thinking>",
+      "tools": []
+    },
+    {
+      "name": "preflight-advanced-<unique>",
+      "task": "Return READY without reading or modifying the project.",
+      "provider": "<plan-advanced-provider>",
+      "model": "<plan-advanced-model>",
+      "thinkingLevel": "<plan-advanced-thinking>",
       "tools": []
     },
     {
       "name": "preflight-validate-<unique>",
       "task": "Return READY without reading or modifying the project.",
-      "provider": "<resolved-validation-provider>",
-      "model": "<resolved-validation-model>",
-      "thinkingLevel": "<resolved-validation-thinking>",
+      "provider": "<plan-validation-provider>",
+      "model": "<plan-validation-model>",
+      "thinkingLevel": "<plan-validation-thinking>",
       "tools": []
     }
   ]
 }
 ```
 
-Substitute the resolved tuples from the Model resolution contract for every placeholder field. Poll until both reach a terminal state. Confirm the reported provider, model, and thinking level exactly against the resolved configuration. Because a spawn batch is validated atomically, a rejected tuple or tool set prevents either preflight task from starting.
+Substitute tuples from the validated plan for every placeholder field. Poll until every preflight agent reaches a terminal state. Confirm each reported provider, model, and thinking level exactly against the plan and frozen execution record. Because a spawn batch is validated atomically, a rejected tuple or tool set prevents every preflight task from starting.
 
-Do not proceed when either preflight fails.
+Do not proceed when any preflight fails.
 
 ## Authoritative execution principle
 
@@ -124,7 +125,7 @@ Do not re-validate the plan directory structure with root tools. The determinist
 
 ### Other input forms
 
-For a single phase file, follow its dependencies and shared concepts when present. For raw prose or a checklist, derive only the minimum executable phases needed; do not invent features.
+For a single phase file, raw prose, a checklist, or a legacy plan without validated model assignments, run the sprint-planner advanced-planning workflow first. Do not perform implementation until the result is a generated plan directory accepted by `sprint_validate_plan`.
 
 ### General pre-scheduling steps
 
@@ -155,7 +156,7 @@ The root owns all sprint tool calls. Do not delegate `sprint_validate_plan` or `
 
 ## One phase = one validation unit
 
-A phase is the atomic dependency and validation unit. An unsplit phase maps to one implementation-agent session at the resolved implementation model. When the phase plan explicitly contains contiguous lettered subphases (A, B, C, and so on), each subphase maps to one sequential implementation-agent session. Use the planner's practical sizing judgment; do not calculate or enforce token counts during execution. Complete every subphase in letter order before launching the single phase-level validator. Ordinary steps, aspects, and bullets that are not explicit lettered subphases remain instructions within one delegation and must not be split into extra agents.
+A phase is the atomic dependency and validation unit. An unsplit phase maps to one implementation-agent session at its validated plan assignment. When the phase plan explicitly contains contiguous lettered subphases (A, B, C, and so on), each subphase maps to one sequential implementation-agent session at the parent phase's assignment. Use the planner's practical sizing judgment; do not calculate or enforce token counts during execution. Complete every subphase in letter order before launching the single phase-level validator. Ordinary steps, aspects, and bullets that are not explicit lettered subphases remain instructions within one delegation and must not be split into extra agents.
 
 ## Schedule work
 
@@ -169,23 +170,11 @@ The logical wave remains incomplete until every phase has `VERDICT: PASS`, and n
 
 If a declared parallel wave cannot be confirmed safe — overlapping write targets, unknown write sets, shared mutable state, or any uncertainty — block the wave and report the defect as a plan error. Do not silently reschedule a generated-plan wave or invent an alternative topology.
 
-### Non-authoritative input scheduling
-
-For raw prose, checklists, single phase files, or legacy non-authoritative inputs, default to sequential execution when safety cannot be confirmed. Parallelize only when every candidate phase in the wave:
-
-- has all dependencies validated as passed;
-- has a known write set from the orchestration ledger;
-- has no overlapping file or directory target with a sibling;
-- shares no generated artifact, migration, schema, lockfile, or mutable global state with a sibling;
-- can be implemented and validated independently.
-
-An empty or uncertain write set is not evidence of safety — fall back to sequential scheduling.
-
 Limit each implementation or validation wave to four active agents.
 
 ## Delegate implementation
 
-Spawn one implementation agent at the resolved implementation model for each ready unsplit phase, or one at a time for each explicit lettered subphase of a ready phase. Never use an inherited caller agent/model for implementation work: resolve the implementation tuple from the active configuration (Model resolution contract) and explicitly include the resolved `provider`, `model`, and `thinkingLevel` on every implementation spawn; omitting any tuple field is a policy violation even if the current root model appears compatible. Subphases execute sequentially in letter order and share the parent phase's scope, dependencies, and validation gate. Children receive no caller transcript, so every task must be self-contained and include:
+Spawn one implementation agent at the phase's plan-assigned basic or advanced tuple for each ready unsplit phase, or one at a time for each explicit lettered subphase of a ready phase. Never use an inherited caller agent/model or consult the sprint-planner config for implementation work. Read the selected phase assignment from validated `orchestration.md` and explicitly include its `provider`, `model`, and `thinkingLevel` on every implementation spawn; omitting any tuple field is a policy violation even if the current root model appears compatible. Subphases execute sequentially in letter order at the parent phase assignment and share its scope, dependencies, and validation gate. Children receive no caller transcript, so every task must be self-contained and include:
 
 - the user objective and settled constraints;
 - the exact assigned phase, source paths, scope, and criteria;
@@ -205,9 +194,9 @@ Example spawn:
     {
       "name": "impl-<phase-id>",
       "task": "<self-contained phase brief>",
-      "provider": "<resolved-implementation-provider>",
-      "model": "<resolved-implementation-model>",
-      "thinkingLevel": "<resolved-implementation-thinking>",
+      "provider": "<plan-assigned-provider>",
+      "model": "<plan-assigned-model>",
+      "thinkingLevel": "<plan-assigned-thinking>",
       "tools": ["read", "bash", "edit", "write"]
     }
   ]
@@ -245,7 +234,7 @@ Invalid or stale cursors, digest mismatch, or byte-count mismatch block that evi
 
 ## Validate every phase with review-and-repair
 
-After an unsplit phase's implementation attempt, or after every lettered subphase of a split phase has completed, launch one review-and-repair agent at the resolved validation model (the `phaseValidator` assignment) for the parent phase with full edit authority. Never launch independent validation between a phase's lettered subphases. Before launching editing validators concurrently, compare the actual files changed by each implementation plus the validator-authorized repair areas and any newly discovered shared artifacts or state. Parallelize only when the write sets remain disjoint after this check; otherwise serialize validators within the same wave. Validators may not start until all implementation agents in that wave have stopped. Do not start dependents until every member of the wave passes.
+After an unsplit phase's implementation attempt, or after every lettered subphase of a split phase has completed, launch one review-and-repair agent at the plan-owned validation model for the parent phase with full edit authority. Never launch independent validation between a phase's lettered subphases. Before launching editing validators concurrently, compare the actual files changed by each implementation plus the validator-authorized repair areas and any newly discovered shared artifacts or state. Parallelize only when the write sets remain disjoint after this check; otherwise serialize validators within the same wave. Validators may not start until all implementation agents in that wave have stopped. Do not start dependents until every member of the wave passes.
 
 Spawn each phase validator:
 
@@ -255,9 +244,9 @@ Spawn each phase validator:
     {
       "name": "validate-<phase-id>-<unique>",
       "task": "<phase contract, implementation report, concept and orchestration context, and full validation brief>",
-      "provider": "<resolved-validation-provider>",
-      "model": "<resolved-validation-model>",
-      "thinkingLevel": "<resolved-validation-thinking>",
+      "provider": "<plan-validation-provider>",
+      "model": "<plan-validation-model>",
+      "thinkingLevel": "<plan-validation-thinking>",
       "tools": ["read", "bash", "edit", "write"]
     }
   ]
@@ -281,7 +270,7 @@ Each validation brief must include the phase contract, every implementation repo
 
 ### Validator owns repair
 
-There is no `VERDICT: REPAIR` and no separate DeepSeek repair handoff. The validator inspects, edits, and re-validates until every in-scope defect is resolved. A malformed or missing verdict is not a pass; retry once with a fresh uniquely named validator at the resolved validation model inspecting actual state. If the retry is also malformed, record the concrete protocol failure and stop without opening the dependency barrier — a malformed response never becomes PASS, BLOCKED evidence by itself, or a DeepSeek repair request.
+There is no `VERDICT: REPAIR` and no separate implementer repair handoff. The validator inspects, edits, and re-validates until every in-scope defect is resolved. A malformed or missing verdict is not a pass; retry once with a fresh uniquely named validator at the plan-owned validation model inspecting actual state. If the retry is also malformed, record the concrete protocol failure and stop without opening the dependency barrier — a malformed response never becomes PASS or BLOCKED evidence by itself.
 
 ### BLOCKED handling
 
@@ -291,7 +280,7 @@ There is no `VERDICT: REPAIR` and no separate DeepSeek repair handoff. The valid
 2. Start no dependents of the blocked phase while its latest validation verdict is BLOCKED.
 3. Continue disjoint active siblings; cancel only sibling work that newly discovered write overlap makes unsafe.
 4. Poll every launched or cancelled agent to terminal.
-5. If the blocker becomes resolvable within accepted authority, launch a fresh validator at the resolved validation model, checkpoint its next numbered attempt, and repeat until the latest verdict is PASS or the blocker remains unresolved. Never erase or replace earlier BLOCKED attempts.
+5. If the blocker becomes resolvable within accepted authority, launch a fresh validator at the plan-owned validation model, checkpoint its next numbered attempt, and repeat until the latest verdict is PASS or the blocker remains unresolved. Never erase or replace earlier BLOCKED attempts.
 6. If the blocker remains unresolved, finish the record truthfully as blocked; never mark completed without durable latest phase and integration PASS evidence.
 
 ### Senior escalation from validation
@@ -301,7 +290,7 @@ When a phase validator has already made one full correction pass and the phase s
 1. Collect the validator's concrete findings, the specific criteria still failing, and the repository state after its repair edits.
 2. Compose a targeted handoff for a senior agent (edit-authorized) that includes the phase contract, the validator's evidence, and the exact remaining defects.
 3. Launch one senior agent at the resolved senior-advisor model (the `seniorAgent` assignment from the active configuration) to resolve the complex issue.
-4. After the senior agent completes, launch a fresh validator at the resolved validation model against the resulting state.
+4. After the senior agent completes, launch a fresh validator at the plan-owned validation model against the resulting state.
 5. If that validator returns PASS, checkpoint and proceed normally. If it returns BLOCKED again, report the concrete evidence and escalate to the user.
 
 This prevents validator loops on problems that need deeper architectural reasoning while keeping the validation gate intact.
@@ -310,7 +299,7 @@ This prevents validator loops on problems that need deeper architectural reasoni
 
 After each validator terminates, observe the actual changed paths from repository state — not only child self-reports. Combine canonical present/deleted path observations and available digest/byte metadata with the validator's authorized repair boundary. Always submit every truthful changed path, including paths outside declared plan targets; never omit evidence to satisfy an incomplete plan.
 
-An accepted checkpoint may return a structured `outside-declared-targets` warning. Treat it as plan drift, not checkpoint failure: retain the immutable frozen targets as the original scheduling contract, widen only the root's observed write set, and reassess overlap before starting validators or later phases. Serialize validators when newly discovered changed or repair write sets overlap. If drift makes a future authoritative implementation wave unsafe, block that wave as a plan defect rather than silently changing its topology; non-authoritative work falls back to sequential execution.
+An accepted checkpoint may return a structured `outside-declared-targets` warning. Treat it as plan drift, not checkpoint failure: retain the immutable frozen targets as the original scheduling contract, widen only the root's observed write set, and reassess overlap before starting validators or later phases. Serialize validators when newly discovered changed or repair write sets overlap. If drift makes a future authoritative implementation wave unsafe, block that wave as a plan defect rather than silently changing its topology.
 
 Before marking any PASS or opening a dependent barrier, checkpoint through `sprint_execution_record` with `action: "checkpoint"`:
 
@@ -326,11 +315,11 @@ No dependent phase starts before every dependency's latest checkpointed verdict 
 
 ### Malformed verdict retry
 
-A validator response with no recognizable `VERDICT: PASS` or `VERDICT: BLOCKED` is malformed. Retry once with a fresh, uniquely named validator at the resolved validation model using the same exact editing tool set and authority. A malformed response never becomes PASS, BLOCKED evidence by itself, or a DeepSeek repair request. If the retry is malformed, checkpoint the protocol failure and stop without opening the dependency barrier.
+A validator response with no recognizable `VERDICT: PASS` or `VERDICT: BLOCKED` is malformed. Retry once with a fresh, uniquely named validator at the plan-owned validation model using the same exact editing tool set and authority. A malformed response never becomes PASS or BLOCKED evidence by itself. If the retry is malformed, checkpoint the protocol failure and stop without opening the dependency barrier.
 
 ## Final integration gate
 
-After every phase has a checkpointed `VERDICT: PASS`, launch one integration review-and-repair agent at the resolved integration-validation model (the `integrationValidator` assignment) with full edit authority:
+After every phase has a checkpointed `VERDICT: PASS`, launch one integration review-and-repair agent at the plan-owned validation model with full edit authority:
 
 ```json
 {
@@ -338,9 +327,9 @@ After every phase has a checkpointed `VERDICT: PASS`, launch one integration rev
     {
       "name": "integration-<unique>",
       "task": "<integration contract, all phase verdicts, concepts.md, and user directive>",
-      "provider": "<resolved-integration-provider>",
-      "model": "<resolved-integration-model>",
-      "thinkingLevel": "<resolved-integration-thinking>",
+      "provider": "<plan-validation-provider>",
+      "model": "<plan-validation-model>",
+      "thinkingLevel": "<plan-validation-thinking>",
       "tools": ["read", "bash", "edit", "write"]
     }
   ]

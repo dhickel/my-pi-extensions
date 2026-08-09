@@ -133,9 +133,11 @@ function orchestrationFor(size: "small" | "medium" | "large" | "extra-large", ph
 		"",
 		"## Model Assignments",
 		"",
-		"- Implementation: deepseek/deepseek-v4-pro:max",
+		"- Basic Implementer: deepseek/deepseek-v4-flash:max",
+		"- Advanced Implementer: deepseek/deepseek-v4-pro:max",
 		"- Validation: openai-codex/gpt-5.6-terra:high",
-		"- Implementers: exactly one implementation agent per unsplit phase, or one sequential agent per lettered subphase for split phases",
+		...phasePaths.map((phasePath, index) => `- ${phasePath}: ${index === phasePaths.length - 1 ? "basic" : "advanced"}`),
+		"- Implementers: exactly one assigned implementation agent per unsplit phase, or one sequential assigned agent per lettered subphase for split phases",
 		"",
 		"## Validation Gate",
 		"",
@@ -290,7 +292,8 @@ test("agent configuration covers every sprint-planner role with exact tuples", (
 		"conceptsReviewer",
 		"orchestrationReviewer",
 		"phaseReviewer",
-		"implementationWorker",
+		"basicImplementer",
+		"advancedImplementer",
 		"phaseValidator",
 		"integrationValidator",
 		"seniorAgent",
@@ -299,6 +302,7 @@ test("agent configuration covers every sprint-planner role with exact tuples", (
 	for (const entry of Object.values(agents)) {
 		const m = entry.model;
 		if (m.model === "deepseek-v4-pro") assert.deepEqual(m, { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" });
+		else if (m.model === "deepseek-v4-flash") assert.deepEqual(m, { provider: "deepseek", model: "deepseek-v4-flash", thinking: "max" });
 		else if (m.model === "gpt-5.6-terra") assert.equal(m.thinking, "high");
 		else if (m.thinking === "xhigh") assert.deepEqual(m, { provider: "openai-codex", model: "gpt-5.6-sol", thinking: "xhigh" });
 		else assert.equal(m.model, "gpt-5.6-sol");
@@ -312,18 +316,22 @@ test("agent configuration covers every sprint-planner role with exact tuples", (
 		assert.deepEqual(agent, { model: { provider: "openai-codex", model: "gpt-5.6-terra", thinking: "high" } });
 	}
 	// Simple model-only assignments
-	for (const key of ["roleRouter", "brainstormSynthesis", "brainstormRedTeam", "ironoutAuthor", "implementationWorker", "phaseValidator", "integrationValidator", "seniorAgent"] as const) {
+	for (const key of ["roleRouter", "brainstormSynthesis", "brainstormRedTeam", "ironoutAuthor", "basicImplementer", "advancedImplementer", "phaseValidator", "integrationValidator", "seniorAgent"] as const) {
 		assert.deepEqual(agents[key], { model: agents[key].model });
 	}
 	assert.deepEqual(agents.brainstormWorker, { model: { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" } });
 	assert.deepEqual(agents.seniorAgent, { model: { provider: "openai-codex", model: "gpt-5.6-sol", thinking: "high" } });
+	assert.deepEqual(agents.basicImplementer.model, { provider: "deepseek", model: "deepseek-v4-flash", thinking: "max" });
+	assert.deepEqual(agents.advancedImplementer.model, { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" });
 });
 
-test("lite configuration assigns every agent to deepseek-v4-pro except the implementation worker", () => {
+test("lite configuration assigns distinct flash implementers and pro planning agents", () => {
 	const lite = SPRINT_PLANNER_AGENT_CONFIGURATIONS.lite;
 	assert.deepEqual(Object.keys(lite), Object.keys(SPRINT_PLANNER_AGENT_CONFIGURATIONS.default), "lite covers every agent");
 	for (const [key, entry] of Object.entries(lite)) {
-		if (key === "implementationWorker") {
+		if (key === "basicImplementer") {
+			assert.deepEqual(entry.model, { provider: "deepseek", model: "deepseek-v4-flash", thinking: "high" }, `${key} should be DeepSeek flash high`);
+		} else if (key === "advancedImplementer") {
 			assert.deepEqual(entry.model, { provider: "deepseek", model: "deepseek-v4-flash", thinking: "max" }, `${key} should be DeepSeek flash max`);
 		} else {
 			assert.deepEqual(entry.model, { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" }, `${key} should be DeepSeek pro max`);
@@ -528,7 +536,7 @@ interface ParsedSkill {
 }
 
 const REQUIRED_ORCHESTRATE_SECTIONS = [
-	"Model resolution contract",
+	"Plan-owned model contract",
 	"Global estimate prohibition",
 	"Tool delegation contract",
 	"Preflight",
@@ -605,9 +613,9 @@ function parseSkill(content: string): ParsedSkill {
 function assertOrchestrateSkillContract(content: string): void {
 	const parsed = parseSkill(content);
 	assert.equal(parsed.frontmatter.get("name"), "orchestrate", "frontmatter name");
-	assert.match(parsed.frontmatter.get("description") ?? "", /execute.*workflow.*phased plan.*resolves every delegated model tuple.*sprint-planner agent configuration/is, "frontmatter description");
-	assert.match(parsed.frontmatter.get("compatibility") ?? "", /subagent_spawn.*subagent_poll.*subagent_status.*subagent_cancel.*configs\/index\.ts/i, "frontmatter compatibility");
-	assert.match(parsed.frontmatterText, /^metadata:\s*\n  version: "4\.3\.0"$/m, "frontmatter metadata version");
+	assert.match(parsed.frontmatter.get("description") ?? "", /execute validated advanced plans.*basic or advanced implementation tuple.*validated per-phase assignment.*never from sprint-planner configuration/is, "frontmatter description");
+	assert.match(parsed.frontmatter.get("compatibility") ?? "", /subagent_spawn.*subagent_poll.*subagent_status.*subagent_cancel.*sprint_validate_plan.*sprint_execution_record/i, "frontmatter compatibility");
+	assert.match(parsed.frontmatterText, /^metadata:\s*\n  version: "5\.0\.0"$/m, "frontmatter metadata version");
 
 	for (const heading of REQUIRED_ORCHESTRATE_SECTIONS) {
 		const count = parsed.sections.filter((section) => section.heading === heading).length;
@@ -621,14 +629,14 @@ function assertOrchestrateSkillContract(content: string): void {
 		assert.doesNotMatch(sections.get(heading)!, pattern, `${heading}: ${description}`);
 	};
 
-	must("Model resolution contract", /`implementationWorker`[\s\S]*`phaseValidator`[\s\S]*`integrationValidator`[\s\S]*`seniorAgent`/, "all delegated agent assignments resolved from config");
-	must("Model resolution contract", /`configs\/index\.ts`[\s\S]*`DEFAULT_SPRINT_PLANNER_AGENT_CONFIGURATION`/is, "active configuration name resolved from configs/index.ts");
-	must("Model resolution contract", /`MODEL_PROFILES`[\s\S]*`types\.ts`/s, "profile references expanded through types.ts");
-	must("Model resolution contract", /before the preflight and before every implementation delegation/i, "resolution precedes preflight and implementation");
-	must("Model resolution contract", /thinkingLevel.*thinking.*maps directly/s, "thinking maps to thinkingLevel");
-	must("Model resolution contract", /Never inherit, omit, downgrade, clamp, or substitute any tuple/i, "tuple substitution prohibition");
-	must("Model resolution contract", /unavailable, stop before implementation and report the exact failure/i, "unavailable tuple blocks implementation");
-	must("Model resolution contract", /self-reports.*root inspection.*test output do not replace independent phase validation by the resolved validation model/is, "independent validation");
+	must("Plan-owned model contract", /validated advanced plan is the sole authority for implementation and validation tuples/i, "plan is model authority");
+	must("Plan-owned model contract", /Never look up `basicImplementer`, `advancedImplementer`.*configuration/is, "implementation config lookup forbidden");
+	must("Plan-owned model contract", /`Basic Implementer`.*`Advanced Implementer`.*`Validation`/s, "plan profiles are read");
+	must("Plan-owned model contract", /exactly-one `basic` or `advanced` assignment for every phase/i, "per-phase assignments are complete");
+	must("Plan-owned model contract", /thinkingLevel.*thinking.*maps directly/s, "thinking maps to thinkingLevel");
+	must("Plan-owned model contract", /Never inherit, omit, downgrade, clamp, or substitute a plan-owned tuple/i, "tuple substitution prohibition");
+	must("Plan-owned model contract", /unavailable, stop before implementation and report the exact failure/i, "unavailable tuple blocks implementation");
+	must("Plan-owned model contract", /self-reports.*root inspection.*test output do not replace independent phase validation by the plan-owned validation model/is, "independent validation");
 
 	must("Global estimate prohibition", /Every root report and every delegated report/i, "all root and delegated reports covered");
 	must("Global estimate prohibition", /human time estimates.*duration.*effort.*ETA.*calendar scheduling estimates/is, "human estimate categories prohibited");
@@ -644,13 +652,13 @@ function assertOrchestrateSkillContract(content: string): void {
 	must("Tool delegation contract", /Phase\/integration validators[\s\S]{0,400}"tools"\s*:\s*\[\s*"read"/i, "validator four tools");
 	must("Tool delegation contract", /No child receives subagent, sprint validation, sprint execution, user-questioning, or other root-only tools/i, "no root-only tools for children");
 
-	must("Preflight", /only after authoritative input resolution.*successful generated-plan validation.*accepted execution-record `start`/is, "preflight follows validation and execution start");
+	must("Preflight", /only after successful advanced-plan validation.*accepted execution-record `start`.*plan-owned model assignments/is, "preflight follows validation and execution start");
 	must("Preflight", /Before any implementation edit or other provider work, launch one atomic `subagent_spawn` batch/i, "preflight before edits in one atomic batch");
-	must("Preflight", /two uniquely named no-op agents/i, "two unique no-op agents");
+	must("Preflight", /one uniquely named no-op agent for every distinct implementation tuple.*plus one at the plan-owned validation tuple/is, "all used tuples are preflighted");
 	must("Preflight", /Return READY without reading or modifying the project/i, "no-op task");
-	must("Preflight", /Poll until both reach a terminal state/i, "poll both to terminal");
-	must("Preflight", /Confirm the reported provider, model, and thinking level exactly/i, "verify actual tuples");
-	must("Preflight", /Do not proceed when either preflight fails/i, "preflight failure blocks");
+	must("Preflight", /Poll until every preflight agent reaches a terminal state/i, "poll every preflight to terminal");
+	must("Preflight", /Confirm each reported provider, model, and thinking level exactly/i, "verify actual tuples");
+	must("Preflight", /Do not proceed when any preflight fails/i, "preflight failure blocks");
 	must("Preflight", /"tools"\s*:\s*\[\s*\]/i, "preflight tools empty array");
 
 	must("Interpret the directive", /complete user input as prompt text, not as a filename/i, "directive is prompt text");
@@ -675,7 +683,7 @@ function assertOrchestrateSkillContract(content: string): void {
 	must("Start the execution record", /root owns all sprint tool calls/i, "root owns sprint tools");
 
 	must("One phase = one validation unit", /phase is the atomic dependency and validation unit/i, "phase-level dependency and validation boundary");
-	must("One phase = one validation unit", /unsplit phase maps to one implementation-agent session at the resolved implementation model/i, "one session for an unsplit phase");
+	must("One phase = one validation unit", /unsplit phase maps to one implementation-agent session at its validated plan assignment/i, "one session for an unsplit phase");
 	must("One phase = one validation unit", /lettered subphases.*each subphase maps to one sequential implementation-agent session/is, "lettered subphases use sequential sessions");
 	must("One phase = one validation unit", /Complete every subphase in letter order before launching the single phase-level validator/i, "validation follows all subphases");
 	must("One phase = one validation unit", /do not calculate or enforce token counts during execution/i, "no runtime token policy");
@@ -687,11 +695,8 @@ function assertOrchestrateSkillContract(content: string): void {
 	must("Schedule work", /dependency becomes complete only after its independent validator returns a checkpointed `VERDICT: PASS`/i, "checkpointed dependency completion");
 	must("Schedule work", /overlapping write targets, unknown write sets, shared mutable state, or any uncertainty.*block the wave and report the defect as a plan error/is, "uncertainty and overlap block authoritative waves");
 	must("Schedule work", /Do not silently reschedule a generated-plan wave or invent an alternative topology/i, "no generated-plan fallback");
-	must("Schedule work", /default to sequential execution when safety cannot be confirmed/i, "non-authoritative sequential fallback");
-	must("Schedule work", /empty or uncertain write set is not evidence of safety.*fall back to sequential scheduling/is, "uncertain non-authoritative fallback");
-
-	must("Delegate implementation", /Spawn one implementation agent at the resolved implementation model for each ready unsplit phase.*one at a time for each explicit lettered subphase/is, "one implementation delegation per implementation unit");
-	must("Delegate implementation", /Subphases execute sequentially in letter order.*parent phase's scope, dependencies, and validation gate/is, "ordered parent-scoped subphases");
+	must("Delegate implementation", /Spawn one implementation agent at the phase's plan-assigned basic or advanced tuple for each ready unsplit phase.*one at a time for each explicit lettered subphase/is, "one implementation delegation per implementation unit");
+	must("Delegate implementation", /Subphases execute sequentially in letter order at the parent phase assignment and share its scope, dependencies, and validation gate/is, "ordered parent-scoped subphases");
 	must("Delegate implementation", /every task must be self-contained/i, "self-contained delegation");
 	must("Delegate implementation", /Implement the complete assigned phase or lettered subphase without placeholders, stubs, fake behavior, or speculative scope/i, "no incomplete implementation");
 	must("Delegate implementation", /Return `Summary`, `Files Changed`, `Validation`, `Criteria`, `Remaining Risks`, and `Blockers` sections/i, "implementer report shape");
@@ -709,7 +714,7 @@ function assertOrchestrateSkillContract(content: string): void {
 	must("Poll every agent", /Verify the final digest matches the complete-result digest/i, "digest verification");
 	must("Poll every agent", /Verify the reconstructed byte count matches the complete-result byte count/i, "byte count verification");
 
-	must("Validate every phase with review-and-repair", /after every lettered subphase of a split phase has completed.*one review-and-repair agent at the resolved validation model.*for the parent phase with full edit authority/is, "editing validator at resolved model after all subphases");
+	must("Validate every phase with review-and-repair", /after every lettered subphase of a split phase has completed.*one review-and-repair agent at the plan-owned validation model.*for the parent phase with full edit authority/is, "editing validator at plan model after all subphases");
 	must("Validate every phase with review-and-repair", /Never launch independent validation between a phase's lettered subphases/i, "no intermediate subphase validation");
 	must("Validate every phase with review-and-repair", /Validators may not start until all implementation agents in that wave have stopped/i, "full implementation-wave barrier");
 	must("Validate every phase with review-and-repair", /Inspect the actual repository state independently/i, "independent state inspection");
@@ -727,8 +732,8 @@ function assertOrchestrateSkillContract(content: string): void {
 	must("PASS-before-dependent barriers", /phase remains `BLOCKED`, start no later dependency wave/i, "BLOCKED prevents downstream");
 
 	// Malformed verdict retry
-	must("PASS-before-dependent barriers", /Retry once with a fresh, uniquely named validator at the resolved validation model using the same exact editing tool set and authority/i, "malformed retry boundary");
-	must("PASS-before-dependent barriers", /malformed response never becomes PASS, BLOCKED evidence by itself, or a DeepSeek repair request/i, "malformed never becomes verdict");
+	must("PASS-before-dependent barriers", /Retry once with a fresh, uniquely named validator at the plan-owned validation model using the same exact editing tool set and authority/i, "malformed retry boundary");
+	must("PASS-before-dependent barriers", /malformed response never becomes PASS or BLOCKED evidence by itself/i, "malformed never becomes verdict");
 
 	// Checkpoint changed files and verdicts
 	must("Checkpoint changed files and verdicts", /After each validator terminates, observe the actual changed paths from repository state/i, "observe actual changed paths");
@@ -738,7 +743,7 @@ function assertOrchestrateSkillContract(content: string): void {
 	must("Checkpoint changed files and verdicts", /Before marking any PASS or opening a dependent barrier, checkpoint through `sprint_execution_record`/i, "checkpoint before PASS barrier");
 	must("Checkpoint changed files and verdicts", /Pass the latest returned revision to every checkpoint call/i, "revision on every checkpoint");
 
-	must("Final integration gate", /After every phase has a checkpointed `VERDICT: PASS`, launch one integration review-and-repair agent at the resolved integration-validation model.*with full edit authority/i, "editing integration gate after all PASS");
+	must("Final integration gate", /After every phase has a checkpointed `VERDICT: PASS`, launch one integration review-and-repair agent at the plan-owned validation model.*with full edit authority/i, "editing integration gate after all PASS");
 	must("Final integration gate", /inspect cross-phase behavior.*run applicable broader checks.*edit any remaining integration defect itself/is, "integration repair and criteria");
 	must("Final integration gate", /After the integration validator terminates, observe repository changes again/i, "observe integration repairs");
 	must("Final integration gate", /After integration PASS, checkpoint the integration verdict, observed changed-file set, and evidence through `sprint_execution_record`/i, "checkpoint integration");
@@ -843,7 +848,7 @@ test("orchestrate skill satisfies the complete actionable contract", async () =>
 test("orchestrate instructions execute lettered subphases before one phase validation", async () => {
 	const skill = await loadSkill();
 	assert.match(skill, /phase is the atomic dependency and validation unit/i);
-	assert.match(skill, /unsplit phase maps to one implementation-agent session at the resolved implementation model/i);
+	assert.match(skill, /unsplit phase maps to one implementation-agent session at its validated plan assignment/i);
 	assert.match(skill, /lettered subphases.*each subphase maps to one sequential implementation-agent session/is);
 	assert.match(skill, /Complete every subphase in letter order before launching the single phase-level validator/i);
 	assert.match(skill, /Never launch independent validation between a phase's lettered subphases/i);
@@ -1075,7 +1080,7 @@ test("plan and handoff prompts provide instruction-only time-estimate guidance",
 		redTeamPrompt,
 		synthesisPrompt,
 	} = await import("../prompts.ts");
-	const planPrompt = advancedPlanPrompt("Test handoff", { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" }, { provider: "openai-codex", model: "gpt-5.6-terra", thinking: "high" });
+	const planPrompt = advancedPlanPrompt("Test handoff", { provider: "deepseek", model: "deepseek-v4-flash", thinking: "max" }, { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" }, { provider: "openai-codex", model: "gpt-5.6-terra", thinking: "high" });
 	assert.match(planPrompt, /4–22 files/);
 	assert.match(planPrompt, /Extra-large: 11–20 phases/);
 	assert.match(planPrompt, /likely to exceed one implementation agent's context/);
@@ -1104,10 +1109,10 @@ test("plan and handoff prompts provide instruction-only time-estimate guidance",
 	assert.match(decompositionReview, /complete requested user scope/i);
 	assert.match(decompositionReview, /mocks, stubs, placeholders, deferred work, partial implementations/i);
 
-	const orchReview = advancedOrchestrationReviewPrompt("Handoff", { path: "concepts.md", content: "x" }, { path: "orchestration.md", content: "x" }, ["phase-01-a.md"], { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" }, { provider: "openai-codex", model: "gpt-5.6-terra", thinking: "high" });
+	const orchReview = advancedOrchestrationReviewPrompt("Handoff", { path: "concepts.md", content: "x" }, { path: "orchestration.md", content: "x" }, ["phase-01-a.md"], { provider: "deepseek", model: "deepseek-v4-flash", thinking: "max" }, { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" }, { provider: "openai-codex", model: "gpt-5.6-terra", thinking: "high" });
 	assert.match(orchReview, /may not add, remove, split, or merge phases/);
 	assert.match(orchReview, /deepseek\/deepseek-v4-pro:max/);
-	assert.match(orchReview, /one implementer per unsplit phase/);
+	assert.match(orchReview, /exactly one basic-or-advanced assignment exists for every phase/);
 	assert.match(orchReview, /PASS gate/);
 	assert.match(orchReview, /one agent session.*200,000–300,000 tokens/i);
 	assert.match(orchReview, /lettered subphases A, B, C/i);
@@ -1153,12 +1158,14 @@ test("plan and handoff prompts provide instruction-only time-estimate guidance",
 		assert.match(prompt, /Do not include time estimates, duration, effort, ETA, or calendar scheduling language\./);
 		assert.match(prompt, /Plans and handoffs describe what to do, not how long it takes\./);
 		assert.match(prompt, /mocks, stubs, placeholders, deferred work, partial implementations/i);
+		assert.match(prompt, /exploration skill.*multiple files|exploration skill.*broad code area/i);
+		assert.match(prompt, /architecture and behavior maps.*type\/function\/class signatures/i);
 	}
 });
 
 test("prompt enforces scope classification criteria with exact budgets", async () => {
 	const { advancedPlanPrompt } = await import("../prompts.ts");
-	const prompt = advancedPlanPrompt("Test", { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" }, { provider: "openai-codex", model: "gpt-5.6-terra", thinking: "high" });
+	const prompt = advancedPlanPrompt("Test", { provider: "deepseek", model: "deepseek-v4-flash", thinking: "max" }, { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" }, { provider: "openai-codex", model: "gpt-5.6-terra", thinking: "high" });
 	assert.match(prompt, /(S|s)mall.*2.{1,5}3/);
 	assert.match(prompt, /(M|m)edium.*3.{1,5}5/);
 	assert.match(prompt, /(L|l)arge.*6.{1,5}10/);
@@ -1454,7 +1461,15 @@ test("orchestration semantics enforce complete ledgers, dependencies, waves, tup
 	assert.throws(() => validateOrchestration(orchestrationSmall.replace("depends: phase-01-first.md", "depends: phase-99-missing.md"), phases), /not a plan phase/);
 	assert.throws(() => validateOrchestration(orchestrationSmall.replace("- wave-01: phase-01-first.md\n- wave-02: phase-02-second.md", "- wave-01: phase-02-second.md\n- wave-02: phase-01-first.md"), phases), /earlier wave/);
 	assert.doesNotThrow(() => validateOrchestration(orchestrationSmall.replace("deepseek/deepseek-v4-pro:max", "deepseek/deepseek-v4-pro:high"), phases));
-	assert.throws(() => validateOrchestration(orchestrationSmall.replace("exactly one implementation agent per unsplit phase, or one sequential agent per lettered subphase for split phases", "two implementation agents per phase"), phases), /Model Assignments.*exact structured/);
+	assert.throws(() => validateOrchestration(orchestrationSmall.replace("exactly one assigned implementation agent per unsplit phase, or one sequential assigned agent per lettered subphase for split phases", "two implementation agents per phase"), phases), /Model Assignments.*exact structured/);
+	assert.throws(() => validateOrchestration(orchestrationSmall.replace("- phase-02-second.md: basic\n", ""), phases), /assign.*phase|Model Assignments/i);
+	assert.throws(() => validateOrchestration(orchestrationSmall.replace("- phase-02-second.md: basic", "- phase-02-second.md: routine"), phases), /assign.*phase|Model Assignments/i);
+	assert.throws(() => validateOrchestration(orchestrationSmall.replace("- Basic Implementer: deepseek/deepseek-v4-flash:max", "- Basic Implementer: deepseek/deepseek-v4-pro:max"), phases), /must be distinct/);
+	assert.throws(() => validateOrchestration(orchestrationSmall.replace("deepseek/deepseek-v4-flash:max", "deepseek/deepseek-v4-flash:high"), phases, {
+		basicImplementationModel: SPRINT_PLANNER_AGENT_CONFIGURATIONS.default.basicImplementer.model,
+		advancedImplementationModel: SPRINT_PLANNER_AGENT_CONFIGURATIONS.default.advancedImplementer.model,
+		validationModel: SPRINT_PLANNER_AGENT_CONFIGURATIONS.default.phaseValidator.model,
+	}), /drifted from the loaded sprint-planner configuration/);
 	assert.throws(() => validateOrchestration(orchestrationSmall.replace("review-and-repair must PASS", "review only"), phases), /Validation Gate.*exact structured/);
 	assert.throws(() => validateOrchestration(orchestrationSmall.replace("run final integration validation", "skip final integration validation"), phases), /Final Integration.*exact structured/);
 	assert.throws(() => validateOrchestration(`${orchestrationSmall}\n## Extra\n\nNot part of the schema.\n`, phases), /only the six required level-two sections/);
@@ -3198,9 +3213,13 @@ async function makeBranchingPlanDir(planDir: string): Promise<void> {
 		"- wave-02: phase-03-third.md",
 		"- wave-03: phase-02-second.md",
 		"", "## Model Assignments", "",
-		"- Implementation: deepseek/deepseek-v4-pro:max",
+		"- Basic Implementer: deepseek/deepseek-v4-flash:max",
+		"- Advanced Implementer: deepseek/deepseek-v4-pro:max",
 		"- Validation: openai-codex/gpt-5.6-terra:high",
-		"- Implementers: exactly one implementation agent per unsplit phase, or one sequential agent per lettered subphase for split phases",
+		"- phase-01-first.md: advanced",
+		"- phase-02-second.md: advanced",
+		"- phase-03-third.md: basic",
+		"- Implementers: exactly one assigned implementation agent per unsplit phase, or one sequential assigned agent per lettered subphase for split phases",
 		"", "## Validation Gate", "",
 		"- Gate: post-phase validator review-and-repair must PASS before a phase is complete.",
 		"- Dependencies: no dependent phase starts before every dependency has PASS.",
@@ -3240,6 +3259,12 @@ test("start creates an execution record with frozen source snapshot and revision
 	assert.ok(record!.source.aggregateDigest.length === 64);
 	assert.equal(record!.frozen.phases.length, 2);
 	assert.deepEqual(record!.frozen.phases, ["phase-01-first.md", "phase-02-second.md"]);
+	assert.deepEqual(record!.frozen.basicImplementationModel, { provider: "deepseek", model: "deepseek-v4-flash", thinking: "max" });
+	assert.deepEqual(record!.frozen.advancedImplementationModel, { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" });
+	assert.deepEqual(record!.frozen.phaseImplementationModels, {
+		"phase-01-first.md": { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" },
+		"phase-02-second.md": { provider: "deepseek", model: "deepseek-v4-flash", thinking: "max" },
+	});
 
 	// Manifest exists
 	const manifestContent = await readFile(path.join(handle.runDirectory, "manifest.md"), "utf8");
@@ -4146,24 +4171,30 @@ function extractSpawnExamples(content: string): SpawnExample[] {
 
 // ── Orchestrate spawn example tool assertions ──────────────────────────
 
-test("orchestrate preflight spawn examples resolve tuples from the configuration and have empty tools", async () => {
+test("orchestrate preflight spawn examples use every plan-owned tuple and have empty tools", async () => {
 	const content = await loadSkill();
 	const examples = extractSpawnExamples(content);
 	const preflights = examples.filter((ex) => ex.name.startsWith("preflight-"));
 	assert.ok(preflights.length >= 2, "at least two preflight examples");
 
-	const implPreflight = preflights.find((ex) => ex.name.startsWith("preflight-impl-"));
-	assert.ok(implPreflight, "implementation preflight exists");
-	assert.equal(implPreflight.provider, "<resolved-implementation-provider>");
-	assert.equal(implPreflight.model, "<resolved-implementation-model>");
-	assert.equal(implPreflight.thinkingLevel, "<resolved-implementation-thinking>");
-	assert.deepEqual(implPreflight.tools, []);
+	const basicPreflight = preflights.find((ex) => ex.name.startsWith("preflight-basic-"));
+	assert.ok(basicPreflight, "basic implementation preflight exists");
+	assert.equal(basicPreflight.provider, "<plan-basic-provider>");
+	assert.equal(basicPreflight.model, "<plan-basic-model>");
+	assert.equal(basicPreflight.thinkingLevel, "<plan-basic-thinking>");
+	assert.deepEqual(basicPreflight.tools, []);
+	const advancedPreflight = preflights.find((ex) => ex.name.startsWith("preflight-advanced-"));
+	assert.ok(advancedPreflight, "advanced implementation preflight exists");
+	assert.equal(advancedPreflight.provider, "<plan-advanced-provider>");
+	assert.equal(advancedPreflight.model, "<plan-advanced-model>");
+	assert.equal(advancedPreflight.thinkingLevel, "<plan-advanced-thinking>");
+	assert.deepEqual(advancedPreflight.tools, []);
 
 	const validatePreflight = preflights.find((ex) => ex.name.startsWith("preflight-validate-"));
 	assert.ok(validatePreflight, "validation preflight exists");
-	assert.equal(validatePreflight.provider, "<resolved-validation-provider>");
-	assert.equal(validatePreflight.model, "<resolved-validation-model>");
-	assert.equal(validatePreflight.thinkingLevel, "<resolved-validation-thinking>");
+	assert.equal(validatePreflight.provider, "<plan-validation-provider>");
+	assert.equal(validatePreflight.model, "<plan-validation-model>");
+	assert.equal(validatePreflight.thinkingLevel, "<plan-validation-thinking>");
 	assert.deepEqual(validatePreflight.tools, []);
 
 	// No preflight has any tools
@@ -4177,9 +4208,9 @@ test("orchestrate implementer spawn examples have exact four-tool set", async ()
 	assert.ok(implementers.length >= 1, "at least one implementer example");
 
 	for (const impl of implementers) {
-		assert.equal(impl.provider, "<resolved-implementation-provider>");
-		assert.equal(impl.model, "<resolved-implementation-model>");
-		assert.equal(impl.thinkingLevel, "<resolved-implementation-thinking>");
+		assert.equal(impl.provider, "<plan-assigned-provider>");
+		assert.equal(impl.model, "<plan-assigned-model>");
+		assert.equal(impl.thinkingLevel, "<plan-assigned-thinking>");
 		assert.deepEqual(impl.tools, ["read", "bash", "edit", "write"]);
 	}
 });
@@ -4191,9 +4222,9 @@ test("orchestrate validator spawn examples have exact four-tool set", async () =
 	assert.ok(validators.length >= 1, "at least one phase validator example");
 
 	for (const val of validators) {
-		assert.equal(val.provider, "<resolved-validation-provider>");
-		assert.equal(val.model, "<resolved-validation-model>");
-		assert.equal(val.thinkingLevel, "<resolved-validation-thinking>");
+		assert.equal(val.provider, "<plan-validation-provider>");
+		assert.equal(val.model, "<plan-validation-model>");
+		assert.equal(val.thinkingLevel, "<plan-validation-thinking>");
 		assert.deepEqual(val.tools, ["read", "bash", "edit", "write"]);
 	}
 });
@@ -4205,9 +4236,9 @@ test("orchestrate integration validator example has exact four-tool set", async 
 	assert.ok(integrations.length >= 1, "at least one integration validator example");
 
 	for (const iv of integrations) {
-		assert.equal(iv.provider, "<resolved-integration-provider>");
-		assert.equal(iv.model, "<resolved-integration-model>");
-		assert.equal(iv.thinkingLevel, "<resolved-integration-thinking>");
+		assert.equal(iv.provider, "<plan-validation-provider>");
+		assert.equal(iv.model, "<plan-validation-model>");
+		assert.equal(iv.thinkingLevel, "<plan-validation-thinking>");
 		assert.deepEqual(iv.tools, ["read", "bash", "edit", "write"]);
 	}
 });
@@ -4613,9 +4644,9 @@ test("orchestrate skill lists every role-specific tool set in the delegation con
 	// Preflight — check for "tools": [] in the preflight section
 	assert.match(content, /Preflight agents[\s\S]{0,300}"tools"\s*:\s*\[\s*\]/i);
 	// Implementers
-	assert.match(content, /Implementers \(resolved implementation model\)[\s\S]{0,300}"tools"\s*:\s*\[/);
+	assert.match(content, /Implementers \(plan-assigned basic or advanced model\)[\s\S]{0,300}"tools"\s*:\s*\[/);
 	// Validators
-	assert.match(content, /Phase\/integration validators \(resolved validation model\)[\s\S]{0,300}"tools"\s*:\s*\[/);
+	assert.match(content, /Phase\/integration validators \(plan-owned validation model\)[\s\S]{0,300}"tools"\s*:\s*\[/);
 	// Image viewing
 	assert.match(content, /Image viewing[\s\S]{0,100}"tools"\s*:\s*\[\s*"read"\s*\]/i);
 });

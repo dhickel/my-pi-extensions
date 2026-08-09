@@ -11,6 +11,7 @@ import {
 	type PlanValidationFinding,
 	type PlanValidationMetadata,
 	type PlanValidationResult,
+	type ModelTuple,
 	type ScopeSize,
 	type SubmissionExpectation,
 	type WorkerSubmission,
@@ -250,7 +251,7 @@ export function validatePhase(path: string, content: string, orchestration?: str
 }
 
 /** Throwing wrapper: validate orchestration content + phase paths. Used inside retry boundaries. */
-export function validateOrchestration(content: string, phasePaths: readonly string[]): ScopeSize {
+export function validateOrchestration(content: string, phasePaths: readonly string[], expectedModels?: ExpectedPlanModelProfiles): ScopeSize {
 	// Build a minimal plan for the inspector with proper cross-consistency metadata.
 	// Parse the ledger from the orchestration to build matching stub phases.
 	const ledger = new Map<string, { deps: string; goal: string; targets: string }>();
@@ -277,7 +278,7 @@ export function validateOrchestration(content: string, phasePaths: readonly stri
 			return { path: p, content: `# Phase\n\n${phaseContent}` };
 		}),
 	];
-	const res = inspectPlan(files);
+	const res = inspectPlan(files, expectedModels);
 	if (!res.valid) {
 		const summary = res.findings.map((f) => `- [${f.category}] ${f.message}${f.path ? ` (${f.path})` : ""}`).join("\n");
 		throw new Error(`Orchestration validation failed:\n${summary}`);
@@ -297,6 +298,49 @@ function exactLines(content: string, heading: string, expected: readonly (string
 	} catch {
 		return false;
 	}
+}
+
+export interface PlanModelAssignments {
+	basicImplementationModel: ModelTuple;
+	advancedImplementationModel: ModelTuple;
+	validationModel: ModelTuple;
+	phaseAssignments: Record<string, "basic" | "advanced">;
+}
+
+export type ExpectedPlanModelProfiles = Omit<PlanModelAssignments, "phaseAssignments">;
+
+const MODEL_TUPLE_PATTERN = /^([a-z0-9][a-z0-9-]*)\/([a-z0-9][a-z0-9_.-]*):(off|minimal|low|medium|high|xhigh|max)$/;
+
+function parseModelTupleText(value: string): ModelTuple | undefined {
+	const match = value.match(MODEL_TUPLE_PATTERN);
+	return match ? { provider: match[1], model: match[2], thinking: match[3] as ModelTuple["thinking"] } : undefined;
+}
+
+function sameTuple(left: ModelTuple, right: ModelTuple): boolean {
+	return left.provider === right.provider && left.model === right.model && left.thinking === right.thinking;
+}
+
+/** Parse the exact plan-owned implementation routes and phase assignments. */
+export function parsePlanModelAssignments(content: string, phasePaths: readonly string[]): PlanModelAssignments {
+	const lines = structuredSectionLines(content, "Model Assignments");
+	const expectedLength = phasePaths.length + 4;
+	if (lines.length !== expectedLength) throw new Error(`Model Assignments must contain three model profiles, exactly one assignment for each of ${phasePaths.length} phases, and the implementer cardinality line.`);
+	const basic = lines[0]?.match(/^- Basic Implementer: (.+)$/);
+	const advanced = lines[1]?.match(/^- Advanced Implementer: (.+)$/);
+	const validation = lines[2]?.match(/^- Validation: (.+)$/);
+	const basicImplementationModel = basic ? parseModelTupleText(basic[1]) : undefined;
+	const advancedImplementationModel = advanced ? parseModelTupleText(advanced[1]) : undefined;
+	const validationModel = validation ? parseModelTupleText(validation[1]) : undefined;
+	if (!basicImplementationModel || !advancedImplementationModel || !validationModel) throw new Error("Model Assignments contains a malformed basic, advanced, or validation model tuple.");
+	if (sameTuple(basicImplementationModel, advancedImplementationModel)) throw new Error("Basic and advanced implementer tuples must be distinct.");
+	const phaseAssignments: Record<string, "basic" | "advanced"> = {};
+	for (const [index, phase] of phasePaths.entries()) {
+		const match = lines[index + 3]?.match(/^- (phase-\d{2}-[a-z0-9][a-z0-9-]*\.md): (basic|advanced)$/);
+		if (!match || match[1] !== phase) throw new Error(`Model Assignments must assign ${phase} exactly once in phase order.`);
+		phaseAssignments[phase] = match[2] as "basic" | "advanced";
+	}
+	if (lines.at(-1) !== "- Implementers: exactly one assigned implementation agent per unsplit phase, or one sequential assigned agent per lettered subphase for split phases") throw new Error("Model Assignments implementer cardinality line is malformed.");
+	return { basicImplementationModel, advancedImplementationModel, validationModel, phaseAssignments };
 }
 
 function inspectionSectionLines(content: string, heading: string): string[] {
@@ -460,7 +504,7 @@ function checkPhaseMetadataCrossConsistency(
 	}
 }
 
-export function inspectPlan(files: readonly { path: string; content: string }[]): PlanValidationResult {
+export function inspectPlan(files: readonly { path: string; content: string }[], expectedModels?: ExpectedPlanModelProfiles): PlanValidationResult {
 	const r = result();
 	const canonical: { path: string; content: string }[] = [];
 	for (const file of files) {
@@ -557,22 +601,24 @@ export function inspectPlan(files: readonly { path: string; content: string }[])
 		let phaseWave: Map<string, number> | undefined;
 		if (ledger) phaseWave = parseWaves(orch.content, ledger, phases, r);
 
-		// Model assignments, validation gate, integration
-		if (!exactLines(orch.content, "Model Assignments", [
-			/^- Implementation: [a-z0-9][a-z0-9-]*\/[a-z0-9][a-z0-9_.-]*:[a-z]+$/,
-			/^- Validation: [a-z0-9][a-z0-9-]*\/[a-z0-9][a-z0-9_.-]*:[a-z]+$/,
-			"- Implementers: exactly one implementation agent per unsplit phase, or one sequential agent per lettered subphase for split phases",
-		])) {
-			push(r, finding("orch-model-assignments", "model-route", "Orchestration Model Assignments section must use the exact structured contract.", "orchestration.md"));
-		}
+		// Plan-owned model profiles and per-phase assignments.
+		let modelAssignments: PlanModelAssignments | undefined;
+		try { modelAssignments = parsePlanModelAssignments(orch.content, phases); }
+		catch (error) { push(r, finding("orch-model-assignments", "model-route", `Orchestration Model Assignments section must use the exact structured contract: ${(error as Error).message}`, "orchestration.md")); }
+		if (modelAssignments && expectedModels && (
+			!sameTuple(modelAssignments.basicImplementationModel, expectedModels.basicImplementationModel)
+			|| !sameTuple(modelAssignments.advancedImplementationModel, expectedModels.advancedImplementationModel)
+			|| !sameTuple(modelAssignments.validationModel, expectedModels.validationModel)
+		)) push(r, finding("orch-model-profile-drift", "model-route", "Orchestration model profiles drifted from the loaded sprint-planner configuration.", "orchestration.md"));
 		if (!exactLines(orch.content, "Validation Gate", [
 			"- Gate: post-phase validator review-and-repair must PASS before a phase is complete.",
 			"- Dependencies: no dependent phase starts before every dependency has PASS.",
 		])) {
 			push(r, finding("orch-validation-gate", "gate", "Orchestration Validation Gate section must use the exact structured contract.", "orchestration.md"));
 		}
+		const integrationTuple = modelAssignments ? `${modelAssignments.validationModel.provider}/${modelAssignments.validationModel.model}:${modelAssignments.validationModel.thinking}` : "<invalid>";
 		if (!exactLines(orch.content, "Final Integration", [
-			/^- Integration: after all phases PASS, run final integration validation with [a-z0-9][a-z0-9-]*\/[a-z0-9][a-z0-9_.-]*:[a-z]+\.$/,
+			`- Integration: after all phases PASS, run final integration validation with ${integrationTuple}.`,
 		])) {
 			push(r, finding("orch-integration", "integration", "Orchestration Final Integration section must use the exact structured contract.", "orchestration.md"));
 		}
@@ -626,8 +672,8 @@ function headingPresent(content: string, heading: string): boolean {
 
 // ── Throwing wrappers (preserve existing signatures) ──────────────────────
 
-export function validatePlanFiles(files: readonly { path: string; content: string }[]): void {
-	const res = inspectPlan(files);
+export function validatePlanFiles(files: readonly { path: string; content: string }[], expectedModels?: ExpectedPlanModelProfiles): void {
+	const res = inspectPlan(files, expectedModels);
 	if (!res.valid) {
 		const summary = res.findings.map((f) => `- [${f.category}] ${f.message}${f.path ? ` (${f.path})` : ""}`).join("\n");
 		throw new Error(`Plan validation failed:\n${summary}`);

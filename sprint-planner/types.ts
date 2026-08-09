@@ -25,6 +25,7 @@ export const MODEL_PROFILES = {
 	deepseekProMax: { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" },
 	deepseekProHigh: { provider: "deepseek", model: "deepseek-v4-pro", thinking: "high" },
 	deepseekFlashMax: { provider: "deepseek", model: "deepseek-v4-flash", thinking: "max" },
+	deepseekFlashHigh: { provider: "deepseek", model: "deepseek-v4-flash", thinking: "high" },
 } as const satisfies Record<string, ModelTuple>;
 
 /** Every agent whose model assignment is controlled by the loaded configuration. */
@@ -41,7 +42,8 @@ export type SprintPlannerAgentId =
 	| "conceptsReviewer"
 	| "orchestrationReviewer"
 	| "phaseReviewer"
-	| "implementationWorker"
+	| "basicImplementer"
+	| "advancedImplementer"
 	| "phaseValidator"
 	| "integrationValidator"
 	| "seniorAgent";
@@ -342,7 +344,11 @@ export interface FrozenOrchestrationSnapshot {
 	waves: Record<string, number>;
 	goals: Record<string, string>;
 	targets: Record<string, string[]>;
+	/** Legacy/default implementation tuple; new records use the per-phase map below. */
 	implementationModel: ModelTuple;
+	basicImplementationModel?: ModelTuple;
+	advancedImplementationModel?: ModelTuple;
+	phaseImplementationModels?: Record<string, ModelTuple>;
 	validationModel: ModelTuple;
 }
 

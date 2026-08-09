@@ -24,7 +24,8 @@ export const defaultSprintPlannerAgentConfiguration = {
 	orchestrationReviewer: { model: MODEL_PROFILES.terraHigh },
 	phaseReviewer: { model: MODEL_PROFILES.terraHigh },
 	// ── Execution / orchestration ──
-	implementationWorker: { model: MODEL_PROFILES.deepseekProMax },
+	basicImplementer: { model: MODEL_PROFILES.deepseekFlashMax },
+	advancedImplementer: { model: MODEL_PROFILES.deepseekProMax },
 	phaseValidator: { model: MODEL_PROFILES.terraHigh },
 	integrationValidator: { model: MODEL_PROFILES.terraHigh },
 	seniorAgent: { model: MODEL_PROFILES.solHigh },

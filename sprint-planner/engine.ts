@@ -96,6 +96,14 @@ function seniorAdvisorModel(configuration: SprintPlannerAgentConfiguration, assi
 	return assignment.seniorAdvisor ? configuration[assignment.seniorAdvisor].model : undefined;
 }
 
+function expectedPlanModels(configuration: SprintPlannerAgentConfiguration) {
+	return {
+		basicImplementationModel: configuration.basicImplementer.model,
+		advancedImplementationModel: configuration.advancedImplementer.model,
+		validationModel: configuration.phaseValidator.model,
+	};
+}
+
 type OwnedPublication = OwnedFilePublication | OwnedDirectoryPublication;
 
 // ── Scoped fan-out ─────────────────────────────────────────────────────────
@@ -664,6 +672,7 @@ export class SprintPlannerEngine {
 
 	async #validateCompletedStep(id: string, artifacts: readonly ArtifactRecord[]): Promise<void> {
 		const read = async (path: string) => this.#artifactStore!.read(path);
+		const planModels = expectedPlanModels(this.agentConfiguration);
 		if (id === "ironout-author") return validateHandoff(await read("ironout/draft.md"));
 		if (id === "ironout-review") return validateHandoff(await read("ironout/handoff.md"));
 		if (id === "planning-author") {
@@ -673,7 +682,7 @@ export class SprintPlannerEngine {
 		}
 		if (id === "planning-decomposition") {
 			const files = await Promise.all(artifacts.filter((artifact) => artifact.path.startsWith("planning-corrected/")).map(async (artifact) => ({ path: artifact.path.slice("planning-corrected/".length), content: await read(artifact.path) })));
-			validatePlanFiles(files);
+			validatePlanFiles(files, planModels);
 			requiredHeadings(await read("reviews/advanced-plan-components/decomposition.md"), REVIEW_HEADINGS, "decomposition.md");
 			return;
 		}
@@ -683,7 +692,7 @@ export class SprintPlannerEngine {
 			const phasePaths = decomp?.artifacts
 				? decomp.artifacts.filter((a) => a.path.startsWith("planning-corrected/")).map((a) => a.path.replace(/^planning-corrected\//, "")).filter((p) => /^phase-\d{2}-/.test(p)).sort()
 				: this.#state!.steps["planning-author"].artifacts.map((a) => a.path.replace(/^planning-draft\//, "")).filter((p) => /^phase-\d{2}-/.test(p)).sort();
-			validateOrchestration(await read("planning-review-draft/orchestration.md"), phasePaths);
+			validateOrchestration(await read("planning-review-draft/orchestration.md"), phasePaths, planModels);
 			return;
 		}
 		if (id.startsWith("planning-review-phase-")) {
@@ -1018,11 +1027,12 @@ export class SprintPlannerEngine {
 	async #sprintPlan(handoff: string): Promise<CorrectedPlanResult> {
 		const store = this.#artifactStore!;
 		const agents = this.agentConfiguration;
+		const planModels = expectedPlanModels(agents);
 		const draftSubmission = await this.#step(
 			"planning-author",
 			"planning",
 			agents.planner.model,
-			{ role: "advanced planner", mode: "planning", prompt: advancedPlanPrompt(handoff, agents.implementationWorker.model, agents.phaseValidator.model), contextPaths: ["ironout/handoff.md"], expectation: { kind: "files", minFiles: 4, maxFiles: 22 }, maxSeniorCalls: agents.planner.maxSeniorCalls, seniorModel: seniorAdvisorModel(agents, agents.planner) },
+			{ role: "advanced planner", mode: "planning", prompt: advancedPlanPrompt(handoff, agents.basicImplementer.model, agents.advancedImplementer.model, agents.phaseValidator.model), contextPaths: ["ironout/handoff.md"], expectation: { kind: "files", minFiles: 4, maxFiles: 22 }, maxSeniorCalls: agents.planner.maxSeniorCalls, seniorModel: seniorAdvisorModel(agents, agents.planner) },
 			(submission) => { validateDraftPlanShape(submission.files!); },
 			async (submission) => Promise.all(submission.files!.map((file) => store.write(`planning-draft/${file.path}`, file.content))),
 		);
@@ -1041,7 +1051,7 @@ export class SprintPlannerEngine {
 				if (review.length !== 1) throw new Error("Decomposition review must submit exactly one review.md.");
 				requiredHeadings(review[0].content, REVIEW_HEADINGS, "review.md");
 				const corrected = submission.files!.filter((file) => file.path !== "review.md");
-				validatePlanFiles(corrected);
+				validatePlanFiles(corrected, planModels);
 			},
 			async (submission) => {
 				const review = submission.files!.filter((file) => file.path === "review.md");
@@ -1074,7 +1084,7 @@ export class SprintPlannerEngine {
 			}
 		}
 		const finalPlanFiles = correctedPlanFiles;
-		validatePlanFiles(finalPlanFiles);
+		validatePlanFiles(finalPlanFiles, planModels);
 
 		// ── Phase set is frozen from here ──
 		const names = planNames(finalPlanFiles);
@@ -1104,10 +1114,10 @@ export class SprintPlannerEngine {
 			"planning-review-orchestration",
 			"planning",
 			agents.orchestrationReviewer.model,
-			{ role: "advanced orchestration reviewer", mode: "planning", prompt: advancedOrchestrationReviewPrompt(handoff, correctedConceptsFile, baseOrchestration, phasePaths, agents.implementationWorker.model, agents.phaseValidator.model), contextPaths: ["ironout/handoff.md", "planning-review-draft/concepts.md", "planning-corrected/orchestration.md"], expectation: { kind: "files", allowedPaths: ["review.md", "orchestration.md"], requiredPaths: ["review.md", "orchestration.md"], minFiles: 2, maxFiles: 2, headings: { "review.md": REVIEW_HEADINGS, "orchestration.md": ORCHESTRATION_HEADINGS } } },
+			{ role: "advanced orchestration reviewer", mode: "planning", prompt: advancedOrchestrationReviewPrompt(handoff, correctedConceptsFile, baseOrchestration, phasePaths, agents.basicImplementer.model, agents.advancedImplementer.model, agents.phaseValidator.model), contextPaths: ["ironout/handoff.md", "planning-review-draft/concepts.md", "planning-corrected/orchestration.md"], expectation: { kind: "files", allowedPaths: ["review.md", "orchestration.md"], requiredPaths: ["review.md", "orchestration.md"], minFiles: 2, maxFiles: 2, headings: { "review.md": REVIEW_HEADINGS, "orchestration.md": ORCHESTRATION_HEADINGS } } },
 			(submission) => {
 				const map = filesByPath(submission);
-				validateOrchestration(map.get("orchestration.md")!, phasePaths);
+				validateOrchestration(map.get("orchestration.md")!, phasePaths, planModels);
 			},
 			async (submission) => {
 				const map = filesByPath(submission);
@@ -1148,7 +1158,7 @@ export class SprintPlannerEngine {
 
 		// Assemble results in frozen phase order.
 		const plan = await Promise.all(names.map(async (path) => ({ path, content: await store.read(`planning-review-draft/${path}`) })));
-		validatePlanFiles(plan);
+		validatePlanFiles(plan, planModels);
 		const componentPaths = ["reviews/advanced-plan-components/decomposition.md", "reviews/advanced-plan-components/concepts.md", "reviews/advanced-plan-components/orchestration.md", ...phasePaths.map((path) => `reviews/advanced-plan-components/${path.replace(/\.md$/, "")}.md`)];
 		const reviews = await Promise.all(componentPaths.map(async (path) => {
 			try { return { path: path.split("/").at(-1)!, content: await store.read(path) }; } catch { return { path: path.split("/").at(-1)!, content: "Review not persisted." }; }
@@ -1418,8 +1428,9 @@ export class SprintPlannerEngine {
 		const plansParent = resolve(options.internalDevPath, "plans");
 		const staging = await createStandaloneStaging(plansParent, options.id);
 		const agents = this.agentConfiguration;
+		const planModels = expectedPlanModels(agents);
 		const draft = await this.#standaloneCall(
-			this.#request(options, { id: `${options.id}-plan`, role: "advanced planner", model: agents.planner.model, mode: "planning", prompt: advancedPlanPrompt(options.directive, agents.implementationWorker.model, agents.phaseValidator.model), contextPaths: [], expectation: { kind: "files", minFiles: 4, maxFiles: 22 }, maxSeniorCalls: agents.planner.maxSeniorCalls, seniorModel: seniorAdvisorModel(agents, agents.planner) }),
+			this.#request(options, { id: `${options.id}-plan`, role: "advanced planner", model: agents.planner.model, mode: "planning", prompt: advancedPlanPrompt(options.directive, agents.basicImplementer.model, agents.advancedImplementer.model, agents.phaseValidator.model), contextPaths: [], expectation: { kind: "files", minFiles: 4, maxFiles: 22 }, maxSeniorCalls: agents.planner.maxSeniorCalls, seniorModel: seniorAdvisorModel(agents, agents.planner) }),
 			(submission) => validateDraftPlanShape(submission.files!),
 		);
 		await writeStagedFiles(staging, "planning-draft", draft.files!);
@@ -1431,14 +1442,14 @@ export class SprintPlannerEngine {
 				const review = submission.files!.filter((file) => file.path === "review.md");
 				if (review.length !== 1) throw new Error("Decomposition review must submit exactly one review.md.");
 				requiredHeadings(review[0].content, REVIEW_HEADINGS, "review.md");
-				validatePlanFiles(submission.files!.filter((file) => file.path !== "review.md"));
+				validatePlanFiles(submission.files!.filter((file) => file.path !== "review.md"), planModels);
 			},
 		);
 		const decompositionReview = decomp.files!.find((file) => file.path === "review.md")!.content;
 		const correctedFiles = decomp.files!.filter((file) => file.path !== "review.md");
 		await writeStagedFiles(staging, "planning-corrected", correctedFiles);
 		await staging.write("reviews/advanced-plan-components/decomposition.md", decompositionReview);
-		validatePlanFiles(correctedFiles);
+		validatePlanFiles(correctedFiles, planModels);
 		const names = planNames(correctedFiles);
 		const phasePaths = names.filter((path) => path !== "concepts.md" && path !== "orchestration.md");
 		const baseConcepts = correctedFiles.find((file) => file.path === "concepts.md")!;
@@ -1457,8 +1468,8 @@ export class SprintPlannerEngine {
 
 		// Orchestration review.
 		const orchReview = await this.#standaloneCall(
-			this.#request(options, { id: `${options.id}-review-orchestration`, role: "advanced orchestration reviewer", model: agents.orchestrationReviewer.model, mode: "planning", prompt: advancedOrchestrationReviewPrompt(options.directive, correctedConcepts, baseOrchestration, phasePaths, agents.implementationWorker.model, agents.phaseValidator.model), contextPaths: ["concepts.md", "orchestration.md"], expectation: { kind: "files", allowedPaths: ["review.md", "orchestration.md"], requiredPaths: ["review.md", "orchestration.md"], minFiles: 2, maxFiles: 2, headings: { "review.md": REVIEW_HEADINGS, "orchestration.md": ORCHESTRATION_HEADINGS } } }),
-			(submission) => validateOrchestration(filesByPath(submission).get("orchestration.md")!, phasePaths),
+			this.#request(options, { id: `${options.id}-review-orchestration`, role: "advanced orchestration reviewer", model: agents.orchestrationReviewer.model, mode: "planning", prompt: advancedOrchestrationReviewPrompt(options.directive, correctedConcepts, baseOrchestration, phasePaths, agents.basicImplementer.model, agents.advancedImplementer.model, agents.phaseValidator.model), contextPaths: ["concepts.md", "orchestration.md"], expectation: { kind: "files", allowedPaths: ["review.md", "orchestration.md"], requiredPaths: ["review.md", "orchestration.md"], minFiles: 2, maxFiles: 2, headings: { "review.md": REVIEW_HEADINGS, "orchestration.md": ORCHESTRATION_HEADINGS } } }),
+			(submission) => validateOrchestration(filesByPath(submission).get("orchestration.md")!, phasePaths, planModels),
 		);
 		const orchMap = filesByPath(orchReview);
 		componentReviews.push({ path: "orchestration.md", content: orchMap.get("review.md")! });
@@ -1493,7 +1504,7 @@ export class SprintPlannerEngine {
 		await writeStagedFiles(staging, "planning", plan);
 		const stagedPlan = await readStagedFiles(staging, "planning", plan.map((file) => file.path));
 		try {
-			validatePlanFiles(stagedPlan);
+			validatePlanFiles(stagedPlan, planModels);
 		} catch (error) {
 			this.#reportStandaloneValidationFailure(error, staging.runDirectory);
 			throw error;
