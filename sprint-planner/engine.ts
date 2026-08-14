@@ -589,7 +589,7 @@ export class SprintPlannerEngine {
 		let publication: OwnedPublication[] = [];
 		try {
 			const brainstorm = await this.#sprintBrainstorm(directive, state.agents);
-			const handoff = await this.#sprintIronout(brainstorm);
+			const handoff = await this.#sprintIronout(brainstorm, directive);
 			const plan = await this.#sprintPlan(handoff);
 			const manifest = this.#manifestContent(directive, brainstorm, plan);
 			publication = await this.#publishFullSprint(plan, manifest);
@@ -981,7 +981,7 @@ export class SprintPlannerEngine {
 		return { roles, reports, synthesis, redTeam: await store.read("brainstorm/red-team.md") };
 	}
 
-	async #sprintIronout(brainstorm: SprintBrainstormResult) {
+	async #sprintIronout(brainstorm: SprintBrainstormResult, directive: string) {
 		const store = this.#artifactStore!;
 		const agents = this.agentConfiguration;
 		const reportPaths = brainstorm.reports.map((item) => item.path);
@@ -992,13 +992,13 @@ export class SprintPlannerEngine {
 			{
 				role: "autonomous ironout author", mode: "planning",
 				prompt: ironoutPrompt(
-					`${brainstorm.synthesis}\n\n<red-team>\n${brainstorm.redTeam}\n</red-team>`,
+					`<user-directive>\n${directive}\n</user-directive>\n\n<brainstorm-synthesis>\n${brainstorm.synthesis}\n</brainstorm-synthesis>\n\n<red-team>\n${brainstorm.redTeam}\n</red-team>`,
 					// No raw reports — just path references for reduced context.
 					[],
 					false,
 					reportPaths,
 				),
-				contextPaths: ["brainstorm/synthesis.md", "brainstorm/red-team.md"],
+				contextPaths: ["input.md", "brainstorm/synthesis.md", "brainstorm/red-team.md"],
 				expectation: markdownExpectation(HANDOFF_HEADINGS), allowQuestions: false,
 			},
 			(submission) => { validateHandoff(submission.content!); },

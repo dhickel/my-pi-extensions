@@ -2,6 +2,56 @@
 
 Record accepted decisions, justification, alternatives, caveats, affected specifications, source, and review timing.
 
+## 2026-08-14 — Sprint planning re-anchors scope to the user directive
+
+- Decision: in full sprints, the ironout author receives the user's original directive (or the handoff provided to brainstorming) as the authoritative scope contract, alongside the brainstorm synthesis and red-team material as supporting implementation approaches. Brainstorming produces implementation approaches for the directive and may include some quality-of-life and supporting features that genuinely serve it, but it must tighten and refine the request rather than balloon or expand scope. Never-defer applies to user-directive work and decided-on features: all such work must be completed fully, and mocks, stubs, placeholders, deferred work, partial implementations, and bare-minimum shortcuts are acceptable only when the user directive itself asks for them. Phase budgets keep the extra-large tier (11–20 phases) with lettered subphases; most sprints should normally land around 5–10 phases, and planning makes complete plans without trimming work to save tokens.
+- Justification: the previous flow measured "requested scope" against the brainstorm synthesis instead of the user's original request, so the anti-defer directive drove completion of the brainstorm's expansion. Anchoring scope to the directive preserves never-defer enforcement for real requested work while preventing out-of-domain feature creep. The global policy's "do not concern yourself with plan size" line was removed because planning children inherited it and it licensed unbounded plan growth; completeness enforcement now lives in the planning prompts themselves.
+- Alternative and tradeoff: add a dedicated scope-minimization review stage (rejected: extra stage cost without a stronger yardstick than the directive itself) or independently challenge the self-declared scope size (deferred: no objective classifier exists; the directive-anchored prompts plus the 5–10 phase expectation address the observed bloat first).
+- Caveat: the orchestrator continues to execute an accepted plan exactly as defined and never trims scope; plan-size discipline therefore belongs entirely to the planning stages. Stubs or deferred items the directive itself requests remain valid planned endpoints.
+- Affected specification: `sprint-planner-suite.md`; the global Pi policy at `~/.pi/agent/AGENTS.md`.
+- Source: user direction on 2026-08-14.
+- Review timing: when planning prompts, phase budgets, or ironout-input contracts change.
+
+## 2026-08-14 — Default agent configuration migrates to GPT-5.6 Luna xhigh and delegated-edit skills resolve tuples from the configuration
+
+- Decision: the active `default` sprint-planner configuration assigns `roleRouter` and `brainstormSynthesis` to `openai-codex/gpt-5.6-luna:xhigh`, and moves every former `gpt-5.6-terra:high` slot (`ironoutReviewer`, `decompositionReviewer`, `conceptsReviewer`, `orchestrationReviewer`, `phaseReviewer`, `phaseValidator`, `integrationValidator`) to the same luna xhigh profile. The `orchestrate` skill keeps the plan-owned model contract (the tuples advanced planning resolved from configuration and embedded in the validated plan are the authority) and falls back to the active configuration's `basicImplementer`/`advancedImplementer`/`phaseValidator`/`seniorAgent` assignments only when the input carries no validated model assignments. The `jog` skill resolves `basicImplementer`/`advancedImplementer` for delegated edits from the active configuration. The `exploration` and `image-viewing` skills keep their fixed inlined contracts.
+- Justification: the configuration is the single source of truth for agent assignment levels; skills must not inline model tuples because config changes then require editing skills and tests. Plan-owned tuples are not inline to the skill, so orchestration keeps the plan's frozen, config-validated contract and gains a configuration fallback for non-plan input. Runtime resolution in jog keeps delegated edits aligned with the active configuration.
+- Alternative and tradeoff: make orchestration resolve live from configuration instead of the plan (rejected: the plan's frozen tuples would silently be overridden by a config change after planning) or keep inlined tuples in jog (rejected: requires editing the skill on every config change).
+- Caveat: exact tuples still fail rather than substituting another model. The `terraHigh` profile remains in the `MODEL_PROFILES` catalog but is unused by installed configurations; version-1 execution records keep the legacy `gpt-5.6-terra:high` validation contract. This decision supersedes in part the 2026-08-12 jog model-policy tuples.
+- Affected specification: `sprint-planner-suite.md`, `job-planner-suite.md`.
+- Source: user direction on 2026-08-14.
+- Review timing: when extension planning model ids, configuration files, or supported thinking metadata change.
+
+## 2026-08-11 — Job planning is conversational and jogging stays on the root thread
+
+- Decision: the job planner reaches a simple executable contract through uncapped iterative user questions in the root session, then publishes one Markdown plan. Its `jog` skill performs implementation and validation directly on the root thread, with further user questions whenever consequential decisions emerge.
+- Justification: jobs are intended for close agent-user collaboration rather than autonomous, reviewed, phase-based Sprint Planner orchestration. Keeping the workflow in one conversation preserves decisions and makes implementation trade-offs visible as they arise.
+- Alternative and tradeoff: reuse advanced planning and delegated orchestration. Rejected because its model routes, phase ledger, waves, and independent validators add machinery the requested interactive workflow does not need. Root-thread execution gives up delegated parallelism intentionally.
+- Caveat: repository-discoverable facts are inspected rather than asked; at least one user answer is required before plan publication. A governing senior-escalation policy may still require narrow advisory consultation after a concrete failed attempt, but implementation and validation remain root-owned.
+- Affected specification: `job-planner-suite.md`.
+- Source: user direction on 2026-08-11.
+- Review timing: if jobs gain background execution, delegated workers, or a noninteractive planning mode.
+
+## 2026-08-12 — Jog may delegate settled domain edits and both stages may use exploration teams
+
+- Decision: the job planner and jog may run read-only exploration teams under the installed exploration skill's fixed contract (`deepseek/deepseek-v4-flash:max`, `["read", "bash"]`) for broad repository inspection. Jog additionally gains exactly one implementation-delegation capability: after targets are identified and the approach for a domain is ironed out with the user, jog may dispatch large single-domain edits to subagents while the root continues planning other aspects and working with the user. Delegated edits use exact tuples: `deepseek/deepseek-v4-flash:max` for light basic work, document editing, and well-defined simple-logic edits; `deepseek/deepseek-v4-pro:max` for anything relatively complicated or important. Light, small, or tightly coupled changes stay on the root thread.
+- Justification: jogging remains the interactive collaboration the 2026-08-11 decision established, but large settled domain edits no longer need to serialize through the root, and broad surveys no longer need to flood root context. The complexity-tiered model policy directs capability and cost to where the work warrants it.
+- Alternative and tradeoff: keep jog fully root-thread (rejected: rejects useful parallelism for settled work) or adopt full Sprint Planner delegation with validators, waves, and ledgers (rejected: reintroduces machinery that does not fit the interactive single-plan workflow).
+- Caveat: planning decisions, questioning, plan publication, plan amendments, integration, validation, and completion ownership remain root-owned. Subagents never receive user-questioning, subagent-control, or sprint tools and never inherit a caller model; an unavailable exact tuple is reported, never silently substituted. Exploration summaries never replace direct reading of critical code before edits. This decision supersedes in part the 2026-08-11 decision above.
+- Affected specification: `job-planner-suite.md`, the `jog` skill, and the job-planner README.
+- Source: user direction on 2026-08-12.
+- Review timing: if delegated edit validation, model tiers, or exploration team composition change.
+
+## 2026-08-11 — Production quality completes requested scope without expanding it
+
+- Decision: sprint-planner prompts and reviews must enforce production-quality completion only for behavior requested by the user or required by its accepted constraints. They must reject speculative, adjacent, optional, and otherwise unrequested features; “feature-complete” and “production-ready” do not authorize codebase-wide expansion.
+- Justification: prior wording against deferred or partial work was interpreted as a reason to introduce features beyond the user’s request. Explicit scope containment preserves the requirement to deliver every requested behavior fully while preventing feature creep.
+- Alternative and tradeoff: ask planners to infer the distinction from the handoff. Rejected because the repeated production-completeness language is stronger and more likely to override an implicit scope boundary.
+- Caveat: required integration, validation, error handling, and other work necessary to implement the accepted scope remain in scope; this decision excludes only unrequested product capability.
+- Affected specification: `sprint-planner-suite.md`.
+- Source: user direction on 2026-08-11.
+- Review timing: when planning prompts or scope-review contracts change.
+
 ## 2026-07-15 — Sprint planner model routing is code-owned and exact
 
 - Decision: every deterministic extension planning responsibility uses an exact provider, model, and thinking tuple. Brainstorm and ironout routes remain in `sprint-planner/types.ts`; advanced-planning assignments are schema-conforming files in `sprint-planner/configs/`. Extension initialization loads the registered `default` configuration once and injects that snapshot into every planning engine.

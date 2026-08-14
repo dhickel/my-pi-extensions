@@ -1,18 +1,18 @@
 ---
 name: orchestrate
-description: Execute validated advanced plans with dependency-aware sequential or safe parallel subagents. Takes each basic or advanced implementation tuple from the plan's validated per-phase assignment, never from sprint-planner configuration lookup. Use when the user asks to orchestrate, execute, or implement a multi-phase or long-running workflow.
-compatibility: Requires Pi with subagent_spawn, subagent_poll, subagent_status, and subagent_cancel; sprint_validate_plan and sprint_execution_record tools; a readable sprint-planner configuration only for optional senior escalation.
+description: Execute validated advanced plans with dependency-aware sequential or safe parallel subagents. Consumes each validated plan's per-phase basic or advanced implementation and validation tuples and falls back to the loaded sprint-planner agent configuration only when a plan carries no validated model assignments. Use when the user asks to orchestrate, execute, or implement a multi-phase or long-running workflow.
+compatibility: Requires Pi with subagent_spawn, subagent_poll, subagent_status, and subagent_cancel; sprint_validate_plan and sprint_execution_record tools; a readable sprint-planner configuration (configs/index.ts plus the active configuration file) for the fallback path and senior escalation.
 metadata:
-  version: "5.0.0"
+  version: "6.0.0"
 ---
 
 # Orchestrate
 
-Execute an authoritative validated advanced-plan directory supplied by the user. If the input is prose, a checklist, pasted legacy plan content, or individual plan files without the validated model contract, route it through advanced planning before implementation. Support long-running dependency chains and safe parallel phases without changing accepted scope.
+Execute an authoritative validated advanced-plan directory supplied by the user. If the input is prose, a checklist, pasted legacy plan content, or individual plan files without the validated model contract, resolve the model contract from the active sprint-planner configuration (Configuration fallback). Support long-running dependency chains and safe parallel phases without changing accepted scope.
 
 ## Plan-owned model contract
 
-The validated advanced plan is the sole authority for implementation and validation tuples. Never look up `basicImplementer`, `advancedImplementer`, or any former implementation-worker assignment in sprint-planner configuration during orchestration. Never inherit a caller model, reuse a tuple from another run, or accept an unvalidated tuple from user prose.
+The validated advanced plan is the sole authority for implementation and validation tuples whenever it carries them. The plan's `Model Assignments` are configuration-resolved by advanced planning and frozen into the plan, so the skill never needs to inline a model tuple. Never inherit a caller model, reuse a tuple from another run, or accept a tuple from user prose as a substitute for the plan contract.
 
 After `sprint_validate_plan` returns `valid: true`, read `orchestration.md` and consume its exact `Model Assignments` contract:
 
@@ -22,9 +22,19 @@ After `sprint_validate_plan` returns `valid: true`, read `orchestration.md` and 
 4. Convert a selected tuple to spawn fields: `provider`, `model`, and `thinkingLevel` (`thinking` maps directly to `thinkingLevel`).
 5. Confirm the execution record freezes the same per-phase tuples returned from the validated plan. Any mismatch or missing assignment is a permanent plan defect; stop before provider work.
 
-For raw prose, checklists, pasted legacy plans, or single phase files that lack this validated contract, do not choose or infer an implementation model. Route the input through advanced planning first, then orchestrate the resulting validated plan.
+For a generated plan, the plan-owned contract always wins: never consult the configuration for implementation or validation tuples when the validated plan carries them. Under the configuration fallback, every "plan-owned" reference below resolves to the configuration-resolved tuples instead.
 
-Never inherit, omit, downgrade, clamp, or substitute a plan-owned tuple. If an assigned model, authentication, or thinking level is unavailable, stop before implementation and report the exact failure. Implementation self-reports, root inspection, and test output do not replace independent phase validation by the plan-owned validation model.
+### Configuration fallback
+
+When the authoritative input carries no validated model assignments — raw prose, a checklist, a pasted legacy plan, or individual plan files without the validated contract — do not choose or infer an implementation model. Resolve the tuples from the active sprint-planner configuration:
+
+1. Locate the sprint-planner extension root: the directory containing `configs/index.ts` and `types.ts`. If the extension root cannot be located, stop and report the exact failure.
+2. Read `configs/index.ts` and determine the active configuration name (`DEFAULT_SPRINT_PLANNER_AGENT_CONFIGURATION`). The active name is fixed at extension load; do not accept a user request to switch it.
+3. Read the active configuration file (`configs/<name>.ts`) and take the `basicImplementer`, `advancedImplementer`, `phaseValidator`, and `seniorAgent` assignments. Configuration entries may reference `MODEL_PROFILES` from `types.ts`; expand each referenced profile to its provider/model/thinking tuple.
+4. Convert each resolved tuple to spawn fields: `provider`, `model`, and `thinkingLevel` (`thinking` maps directly to `thinkingLevel`).
+5. If the configuration cannot be read, the active name is missing, or any required assignment is absent, stop and report the exact failure.
+
+Never inherit, omit, downgrade, clamp, or substitute a plan-owned or configuration-resolved tuple. If an assigned model, authentication, or thinking level is unavailable, stop before implementation and report the exact failure. Implementation self-reports, root inspection, and test output do not replace independent phase validation by the plan-owned validation model.
 
 ## Global estimate prohibition
 
@@ -62,7 +72,7 @@ No child receives subagent, sprint validation, sprint execution, user-questionin
 
 ## Preflight
 
-Run this preflight only after successful advanced-plan validation, accepted execution-record `start`, and extraction of its plan-owned model assignments. Before any implementation edit or other provider work, launch one atomic `subagent_spawn` batch containing one uniquely named no-op agent for every distinct implementation tuple assigned to at least one phase, plus one at the plan-owned validation tuple. The example below shows both implementation profiles; omit an unused profile:
+Run this preflight only after successful advanced-plan validation, accepted execution-record `start`, and extraction of its plan-owned model assignments (or the configuration fallback tuples when the input carries none). Before any implementation edit or other provider work, launch one atomic `subagent_spawn` batch containing one uniquely named no-op agent for every distinct implementation tuple assigned to at least one phase, plus one at the plan-owned validation tuple. The example below shows both implementation profiles; omit an unused profile:
 
 ```json
 {
@@ -95,7 +105,7 @@ Run this preflight only after successful advanced-plan validation, accepted exec
 }
 ```
 
-Substitute tuples from the validated plan for every placeholder field. Poll until every preflight agent reaches a terminal state. Confirm each reported provider, model, and thinking level exactly against the plan and frozen execution record. Because a spawn batch is validated atomically, a rejected tuple or tool set prevents every preflight task from starting.
+Substitute tuples from the validated plan (or the configuration fallback) for every placeholder field. Poll until every preflight agent reaches a terminal state. Confirm each reported provider, model, and thinking level exactly against the plan and frozen execution record (or the resolved fallback tuples). Because a spawn batch is validated atomically, a rejected tuple or tool set prevents every preflight task from starting.
 
 Do not proceed when any preflight fails.
 
@@ -125,7 +135,7 @@ Do not re-validate the plan directory structure with root tools. The determinist
 
 ### Other input forms
 
-For a single phase file, raw prose, a checklist, or a legacy plan without validated model assignments, run the sprint-planner advanced-planning workflow first. Do not perform implementation until the result is a generated plan directory accepted by `sprint_validate_plan`.
+For a single phase file, raw prose, a checklist, or a legacy plan without validated model assignments, resolve the model contract from the active configuration (Configuration fallback) and orchestrate directly. The execution-record contract applies only when the input is a generated plan directory accepted by `sprint_validate_plan`; fallback orchestration proceeds without a frozen record.
 
 ### General pre-scheduling steps
 
@@ -135,7 +145,7 @@ For a single phase file, raw prose, a checklist, or a legacy plan without valida
 
 ## Start the execution record
 
-After resolving authoritative input and validating a generated plan, call `sprint_execution_record` with `action: "start"` to persist the execution identity and freeze the source plan. `sourcePlanPath` must be the same canonical project-relative directory accepted by `sprint_validate_plan`:
+For a validated generated plan, call `sprint_execution_record` with `action: "start"` after validation to persist the execution identity and freeze the source plan. `sourcePlanPath` must be the same canonical project-relative directory accepted by `sprint_validate_plan`:
 
 ```json
 {
@@ -156,7 +166,7 @@ The root owns all sprint tool calls. Do not delegate `sprint_validate_plan` or `
 
 ## One phase = one validation unit
 
-A phase is the atomic dependency and validation unit. An unsplit phase maps to one implementation-agent session at its validated plan assignment. When the phase plan explicitly contains contiguous lettered subphases (A, B, C, and so on), each subphase maps to one sequential implementation-agent session at the parent phase's assignment. Use the planner's practical sizing judgment; do not calculate or enforce token counts during execution. Complete every subphase in letter order before launching the single phase-level validator. Ordinary steps, aspects, and bullets that are not explicit lettered subphases remain instructions within one delegation and must not be split into extra agents.
+A phase is the atomic dependency and validation unit. An unsplit phase maps to one implementation-agent session at its validated plan assignment (or its configuration-resolved assignment under the fallback). When the phase plan explicitly contains contiguous lettered subphases (A, B, C, and so on), each subphase maps to one sequential implementation-agent session at the parent phase's assignment. Use the planner's practical sizing judgment; do not calculate or enforce token counts during execution. Complete every subphase in letter order before launching the single phase-level validator. Ordinary steps, aspects, and bullets that are not explicit lettered subphases remain instructions within one delegation and must not be split into extra agents.
 
 ## Schedule work
 
@@ -174,7 +184,7 @@ Limit each implementation or validation wave to four active agents.
 
 ## Delegate implementation
 
-Spawn one implementation agent at the phase's plan-assigned basic or advanced tuple for each ready unsplit phase, or one at a time for each explicit lettered subphase of a ready phase. Never use an inherited caller agent/model or consult the sprint-planner config for implementation work. Read the selected phase assignment from validated `orchestration.md` and explicitly include its `provider`, `model`, and `thinkingLevel` on every implementation spawn; omitting any tuple field is a policy violation even if the current root model appears compatible. Subphases execute sequentially in letter order at the parent phase assignment and share its scope, dependencies, and validation gate. Children receive no caller transcript, so every task must be self-contained and include:
+Spawn one implementation agent at the phase's plan-assigned basic or advanced tuple for each ready unsplit phase, or one at a time for each explicit lettered subphase of a ready phase. Never use an inherited caller agent/model. Read the selected phase assignment from validated `orchestration.md` (or the fallback assignment when the plan carries none) and explicitly include its `provider`, `model`, and `thinkingLevel` on every implementation spawn; omitting any tuple field is a policy violation even if the current root model appears compatible. Subphases execute sequentially in letter order at the parent phase assignment and share its scope, dependencies, and validation gate. Children receive no caller transcript, so every task must be self-contained and include:
 
 - the user objective and settled constraints;
 - the exact assigned phase, source paths, scope, and criteria;

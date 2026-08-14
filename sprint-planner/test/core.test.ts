@@ -135,7 +135,7 @@ function orchestrationFor(size: "small" | "medium" | "large" | "extra-large", ph
 		"",
 		"- Basic Implementer: deepseek/deepseek-v4-flash:max",
 		"- Advanced Implementer: deepseek/deepseek-v4-pro:max",
-		"- Validation: openai-codex/gpt-5.6-terra:high",
+		"- Validation: openai-codex/gpt-5.6-luna:xhigh",
 		...phasePaths.map((phasePath, index) => `- ${phasePath}: ${index === phasePaths.length - 1 ? "basic" : "advanced"}`),
 		"- Implementers: exactly one assigned implementation agent per unsplit phase, or one sequential assigned agent per lettered subphase for split phases",
 		"",
@@ -146,7 +146,7 @@ function orchestrationFor(size: "small" | "medium" | "large" | "extra-large", ph
 		"",
 		"## Final Integration",
 		"",
-		"- Integration: after all phases PASS, run final integration validation with openai-codex/gpt-5.6-terra:high.",
+		"- Integration: after all phases PASS, run final integration validation with openai-codex/gpt-5.6-luna:xhigh.",
 		"",
 	].join("\n");
 }
@@ -303,24 +303,23 @@ test("agent configuration covers every sprint-planner role with exact tuples", (
 		const m = entry.model;
 		if (m.model === "deepseek-v4-pro") assert.deepEqual(m, { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" });
 		else if (m.model === "deepseek-v4-flash") assert.deepEqual(m, { provider: "deepseek", model: "deepseek-v4-flash", thinking: "max" });
-		else if (m.model === "gpt-5.6-terra") assert.equal(m.thinking, "high");
-		else if (m.thinking === "xhigh") assert.deepEqual(m, { provider: "openai-codex", model: "gpt-5.6-sol", thinking: "xhigh" });
+		else if (m.thinking === "xhigh") assert.deepEqual(m, { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "xhigh" });
 		else assert.equal(m.model, "gpt-5.6-sol");
 	}
-	assert.deepEqual(agents.ironoutReviewer.model, { provider: "openai-codex", model: "gpt-5.6-terra", thinking: "high" });
+	assert.deepEqual(agents.ironoutReviewer.model, { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "xhigh" });
 	// Assignments with senior-call metadata
 	assert.deepEqual(agents.planner, { model: { provider: "openai-codex", model: "gpt-5.6-sol", thinking: "high" }, maxSeniorCalls: 2, seniorAdvisor: "advisor" });
 	assert.deepEqual(agents.advisor, { model: { provider: "openai-codex", model: "gpt-5.6-sol", thinking: "max" } });
-	assert.deepEqual(agents.decompositionReviewer, { model: { provider: "openai-codex", model: "gpt-5.6-terra", thinking: "high" }, maxSeniorCalls: 1, seniorAdvisor: "advisor" });
+	assert.deepEqual(agents.decompositionReviewer, { model: { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "xhigh" }, maxSeniorCalls: 1, seniorAdvisor: "advisor" });
 	for (const agent of [agents.conceptsReviewer, agents.orchestrationReviewer, agents.phaseReviewer]) {
-		assert.deepEqual(agent, { model: { provider: "openai-codex", model: "gpt-5.6-terra", thinking: "high" } });
+		assert.deepEqual(agent, { model: { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "xhigh" } });
 	}
 	// Simple model-only assignments
 	for (const key of ["roleRouter", "brainstormSynthesis", "brainstormRedTeam", "ironoutAuthor", "basicImplementer", "advancedImplementer", "phaseValidator", "integrationValidator", "seniorAgent"] as const) {
 		assert.deepEqual(agents[key], { model: agents[key].model });
 	}
 	assert.deepEqual(agents.brainstormWorker, { model: { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" } });
-	assert.deepEqual(agents.seniorAgent, { model: { provider: "openai-codex", model: "gpt-5.6-sol", thinking: "high" } });
+	assert.deepEqual(agents.seniorAgent, { model: { provider: "openai-codex", model: "gpt-5.6-sol", thinking: "medium" } });
 	assert.deepEqual(agents.basicImplementer.model, { provider: "deepseek", model: "deepseek-v4-flash", thinking: "max" });
 	assert.deepEqual(agents.advancedImplementer.model, { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" });
 });
@@ -613,9 +612,9 @@ function parseSkill(content: string): ParsedSkill {
 function assertOrchestrateSkillContract(content: string): void {
 	const parsed = parseSkill(content);
 	assert.equal(parsed.frontmatter.get("name"), "orchestrate", "frontmatter name");
-	assert.match(parsed.frontmatter.get("description") ?? "", /execute validated advanced plans.*basic or advanced implementation tuple.*validated per-phase assignment.*never from sprint-planner configuration/is, "frontmatter description");
+	assert.match(parsed.frontmatter.get("description") ?? "", /execute validated advanced plans.*per-phase basic or advanced implementation and validation tuples.*falls back to the loaded sprint-planner agent configuration.*no validated model assignments/is, "frontmatter description");
 	assert.match(parsed.frontmatter.get("compatibility") ?? "", /subagent_spawn.*subagent_poll.*subagent_status.*subagent_cancel.*sprint_validate_plan.*sprint_execution_record/i, "frontmatter compatibility");
-	assert.match(parsed.frontmatterText, /^metadata:\s*\n  version: "5\.0\.0"$/m, "frontmatter metadata version");
+	assert.match(parsed.frontmatterText, /^metadata:\s*\n  version: "6\.0\.0"$/m, "frontmatter metadata version");
 
 	for (const heading of REQUIRED_ORCHESTRATE_SECTIONS) {
 		const count = parsed.sections.filter((section) => section.heading === heading).length;
@@ -629,12 +628,13 @@ function assertOrchestrateSkillContract(content: string): void {
 		assert.doesNotMatch(sections.get(heading)!, pattern, `${heading}: ${description}`);
 	};
 
-	must("Plan-owned model contract", /validated advanced plan is the sole authority for implementation and validation tuples/i, "plan is model authority");
-	must("Plan-owned model contract", /Never look up `basicImplementer`, `advancedImplementer`.*configuration/is, "implementation config lookup forbidden");
+	must("Plan-owned model contract", /validated advanced plan is the sole authority for implementation and validation tuples whenever it carries them/i, "plan is model authority");
+	must("Plan-owned model contract", /never consult the configuration for implementation or validation tuples when the validated plan carries them/i, "plan contract wins over configuration");
 	must("Plan-owned model contract", /`Basic Implementer`.*`Advanced Implementer`.*`Validation`/s, "plan profiles are read");
 	must("Plan-owned model contract", /exactly-one `basic` or `advanced` assignment for every phase/i, "per-phase assignments are complete");
+	must("Plan-owned model contract", /Configuration fallback[\s\S]*`configs\/index\.ts`[\s\S]*`DEFAULT_SPRINT_PLANNER_AGENT_CONFIGURATION`[\s\S]*`configs\/<name>\.ts`[\s\S]*`basicImplementer`, `advancedImplementer`, `phaseValidator`, and `seniorAgent`/is, "configuration fallback steps");
 	must("Plan-owned model contract", /thinkingLevel.*thinking.*maps directly/s, "thinking maps to thinkingLevel");
-	must("Plan-owned model contract", /Never inherit, omit, downgrade, clamp, or substitute a plan-owned tuple/i, "tuple substitution prohibition");
+	must("Plan-owned model contract", /Never inherit, omit, downgrade, clamp, or substitute a plan-owned or configuration-resolved tuple/i, "tuple substitution prohibition");
 	must("Plan-owned model contract", /unavailable, stop before implementation and report the exact failure/i, "unavailable tuple blocks implementation");
 	must("Plan-owned model contract", /self-reports.*root inspection.*test output do not replace independent phase validation by the plan-owned validation model/is, "independent validation");
 
@@ -1084,9 +1084,11 @@ test("plan and handoff prompts provide instruction-only time-estimate guidance",
 		redTeamPrompt,
 		synthesisPrompt,
 	} = await import("../prompts.ts");
-	const planPrompt = advancedPlanPrompt("Test handoff", { provider: "deepseek", model: "deepseek-v4-flash", thinking: "max" }, { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" }, { provider: "openai-codex", model: "gpt-5.6-terra", thinking: "high" });
+	const planPrompt = advancedPlanPrompt("Test handoff", { provider: "deepseek", model: "deepseek-v4-flash", thinking: "max" }, { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" }, { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "xhigh" });
 	assert.match(planPrompt, /4–22 files/);
 	assert.match(planPrompt, /Extra-large: 11–20 phases/);
+	assert.match(planPrompt, /Most sprints should normally land around 5–10 phases/);
+	assert.match(planPrompt, /up to 20 phases are supported/);
 	assert.match(planPrompt, /likely to exceed one implementation agent's context/);
 	assert.match(planPrompt, /Scope Size/);
 	assert.match(planPrompt, /Phase Ledger/);
@@ -1096,7 +1098,7 @@ test("plan and handoff prompts provide instruction-only time-estimate guidance",
 	assert.match(planPrompt, /Final Integration/);
 	assert.match(planPrompt, /\*\*Size\*\*: small/);
 	assert.match(planPrompt, /deepseek\/deepseek-v4-pro:max/);
-	assert.match(planPrompt, /openai-codex\/gpt-5\.6-terra:high/);
+	assert.match(planPrompt, /openai-codex\/gpt-5\.6-luna:xhigh/);
 	assert.match(planPrompt, /Technical machine semantics.*timeout.*TTL.*retry.*backoff.*polling.*cache.*retention.*lease.*complexity/i);
 	assert.match(planPrompt, /one agent session.*200,000–300,000 tokens/i);
 	assert.match(planPrompt, /lettered subphases \(A, B, C/i);
@@ -1105,6 +1107,8 @@ test("plan and handoff prompts provide instruction-only time-estimate guidance",
 	assert.match(planPrompt, /full requested user scope/i);
 	assert.match(planPrompt, /mocks, stubs, placeholders, deferred work, partial implementations/i);
 	assert.match(planPrompt, /production-quality behavior/i);
+	assert.match(planPrompt, /speculative, adjacent, optional, or otherwise unrequested features/i);
+	assert.match(planPrompt, /not expanding the request/i);
 
 	const decompositionReview = advancedDecompositionReviewPrompt("Handoff", []);
 	assert.match(decompositionReview, /one agent session.*200,000–300,000 tokens/i);
@@ -1112,8 +1116,10 @@ test("plan and handoff prompts provide instruction-only time-estimate guidance",
 	assert.match(decompositionReview, /validation happens only after all of its subphases complete/i);
 	assert.match(decompositionReview, /complete requested user scope/i);
 	assert.match(decompositionReview, /mocks, stubs, placeholders, deferred work, partial implementations/i);
+	assert.match(decompositionReview, /without feature creep/i);
+	assert.match(decompositionReview, /speculative, adjacent, optional, or otherwise unrequested features/i);
 
-	const orchReview = advancedOrchestrationReviewPrompt("Handoff", { path: "concepts.md", content: "x" }, { path: "orchestration.md", content: "x" }, ["phase-01-a.md"], { provider: "deepseek", model: "deepseek-v4-flash", thinking: "max" }, { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" }, { provider: "openai-codex", model: "gpt-5.6-terra", thinking: "high" });
+	const orchReview = advancedOrchestrationReviewPrompt("Handoff", { path: "concepts.md", content: "x" }, { path: "orchestration.md", content: "x" }, ["phase-01-a.md"], { provider: "deepseek", model: "deepseek-v4-flash", thinking: "max" }, { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" }, { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "xhigh" });
 	assert.match(orchReview, /may not add, remove, split, or merge phases/);
 	assert.match(orchReview, /deepseek\/deepseek-v4-pro:max/);
 	assert.match(orchReview, /exactly one basic-or-advanced assignment exists for every phase/);
@@ -1123,6 +1129,8 @@ test("plan and handoff prompts provide instruction-only time-estimate guidance",
 	assert.match(orchReview, /phase validation only after every subphase completes/i);
 	assert.match(orchReview, /full production scope/i);
 	assert.match(orchReview, /acceptance endpoints/i);
+	assert.match(orchReview, /without feature creep/i);
+	assert.match(orchReview, /speculative, adjacent, optional, or otherwise unrequested features/i);
 
 	const conceptReview = advancedConceptReviewPrompt("Handoff", { path: "concepts.md", content: "x" }, ["phase-01-a.md"]);
 	const phaseReview = advancedPhaseReviewPrompt({ path: "concepts.md", content: "x" }, { path: "orchestration.md", content: "x" }, { path: "phase-01-a.md", content: "x" }, ["phase-01-a.md"]);
@@ -1140,6 +1148,10 @@ test("plan and handoff prompts provide instruction-only time-estimate guidance",
 	assert.match(phaseReview, /full production scope/i);
 	assert.match(phaseReview, /acceptable exit criteria/i);
 	assert.match(conceptReview, /full production scope/i);
+	for (const prompt of [conceptReview, phaseReview]) {
+		assert.match(prompt, /without feature creep/i);
+		assert.match(prompt, /speculative, adjacent, optional, or otherwise unrequested features/i);
+	}
 
 	const brainstorm = brainstormPrompt("Prompt", { id: "feature-complete", name: "Feature completeness", lens: "Completeness" });
 	const crossReview = crossReviewPrompt({ id: "feature-complete", name: "Feature completeness", lens: "Completeness" }, [{ path: "other.md", content: "## Prompt\n\nx" }]);
@@ -1148,6 +1160,11 @@ test("plan and handoff prompts provide instruction-only time-estimate guidance",
 	for (const prompt of [brainstorm, crossReview, synthesis, redTeam]) {
 		assert.match(prompt, /feature completeness|feature-complete|production quality|production-quality/i);
 		assert.match(prompt, /mocks, stubs, placeholders, deferred work, partial implementations/i);
+		assert.match(prompt, /speculative, adjacent, optional, or otherwise unrequested/i);
+	}
+	for (const prompt of [brainstorm, crossReview, synthesis]) {
+		assert.match(prompt, /implementation approaches/i);
+		assert.match(prompt, /must not balloon or expand scope/i);
 	}
 
 	const guidedPrompts = [
@@ -1164,12 +1181,22 @@ test("plan and handoff prompts provide instruction-only time-estimate guidance",
 		assert.match(prompt, /mocks, stubs, placeholders, deferred work, partial implementations/i);
 		assert.match(prompt, /exploration skill.*multiple files|exploration skill.*broad code area/i);
 		assert.match(prompt, /architecture and behavior maps.*type\/function\/class signatures/i);
+		assert.match(prompt, /speculative, adjacent, optional, or otherwise unrequested features/i);
 	}
+	// Never-defer applies to user-directive work and decided-on features, with a
+	// carve-out for stubs or deferred items the directive itself asks for.
+	for (const prompt of guidedPrompts) {
+		assert.match(prompt, /Do not defer or stub any user-directive work or decided-on feature/i);
+		assert.match(prompt, /unless stubs or deferred items are part of the user directive itself|unless the user directive itself asks for them/i);
+	}
+	// The ironout author receives the directive as the authoritative scope contract.
+	assert.match(ironoutPrompt("Input", [], false), /<user-directive>/);
+	assert.match(ironoutPrompt("Input", [], false), /authoritative scope contract/);
 });
 
 test("prompt enforces scope classification criteria with exact budgets", async () => {
 	const { advancedPlanPrompt } = await import("../prompts.ts");
-	const prompt = advancedPlanPrompt("Test", { provider: "deepseek", model: "deepseek-v4-flash", thinking: "max" }, { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" }, { provider: "openai-codex", model: "gpt-5.6-terra", thinking: "high" });
+	const prompt = advancedPlanPrompt("Test", { provider: "deepseek", model: "deepseek-v4-flash", thinking: "max" }, { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" }, { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "xhigh" });
 	assert.match(prompt, /(S|s)mall.*2.{1,5}3/);
 	assert.match(prompt, /(M|m)edium.*3.{1,5}5/);
 	assert.match(prompt, /(L|l)arge.*6.{1,5}10/);
@@ -1483,7 +1510,7 @@ test("orchestration semantics enforce complete ledgers, dependencies, waves, tup
 		const fencedForeignContent = orchestrationSmall.replace(`## ${heading}\n\n`, `## ${heading}\n\n\`\`\`text\nforeign content\n\`\`\`\n`);
 		assert.throws(() => validateOrchestration(fencedForeignContent, phases), /Orchestration/);
 	}
-	assert.throws(() => validateOrchestration(orchestrationSmall.replace("- Validation: openai-codex/gpt-5.6-terra:high", "    - Validation: openai-codex/gpt-5.6-terra:high"), phases), /Model Assignments.*exact structured/);
+	assert.throws(() => validateOrchestration(orchestrationSmall.replace("- Validation: openai-codex/gpt-5.6-luna:xhigh", "    - Validation: openai-codex/gpt-5.6-luna:xhigh"), phases), /Model Assignments.*exact structured/);
 	const parallelOverlap = orchestrationSmall
 		.replace("phase-02-second.md | depends: phase-01-first.md | targets: sprint-planner/target-02.ts", "phase-02-second.md | depends: none | targets: sprint-planner/target-01.ts")
 		.replace("- wave-01: phase-01-first.md\n- wave-02: phase-02-second.md", "- wave-01: phase-01-first.md, phase-02-second.md");
@@ -2247,13 +2274,13 @@ test("ThinkingLevel type contains each level exactly once", () => {
 	assert.ok(levels.has("off") === false); // not used but exists in type
 	assert.ok(levels.has("minimal") === false);
 	assert.ok(levels.has("low") === false);
-	assert.ok(levels.has("medium") === false); // not used but exists in type
+	assert.ok(levels.has("medium"));
 	assert.ok(levels.has("high"));
-	assert.ok(levels.has("xhigh") === false); // not used by config tuples; reserved for senior-agent escalation (high → xhigh → max)
+	assert.ok(levels.has("xhigh")); // used by luna profiles (roleRouter, brainstormSynthesis)
 	assert.ok(levels.has("max"));
 	// Verify assignments that use higher reasoning levels.
-	assert.equal(SPRINT_PLANNER_AGENT_CONFIGURATIONS.default.phaseReviewer.model.thinking, "high");
-	assert.equal(SPRINT_PLANNER_AGENT_CONFIGURATIONS.default.seniorAgent.model.thinking, "high");
+	assert.equal(SPRINT_PLANNER_AGENT_CONFIGURATIONS.default.phaseReviewer.model.thinking, "xhigh");
+	assert.equal(SPRINT_PLANNER_AGENT_CONFIGURATIONS.default.seniorAgent.model.thinking, "medium");
 	// Verify no duplicate medium in union by checking all values are valid
 	for (const entry of Object.values(SPRINT_PLANNER_AGENT_CONFIGURATIONS.default)) {
 		const valid: string[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
@@ -2428,9 +2455,9 @@ test("Phase 01 drift path resets completed component attempts and downstream on 
 	assert.equal(conceptsStep.attempts, 1);
 });
 
-// ── Phase 02: reduced ironout context ────────────────────────────────────
+// ── Phase 02: reduced ironout context with directive authority ────────────────────
 
-test("full-sprint ironout prompt excludes raw reports and embeds only synthesis, red-team, and report paths", async () => {
+test("full-sprint ironout prompt embeds the user directive plus synthesis and red team, excluding raw reports", async () => {
 	const { root, internal } = await project();
 	const runner = new FakeRunner();
 	await new SprintPlannerEngine(runner).runSprint({ projectRoot: root, internalDevPath: internal, runId: "ironout-ctx", directive: "Ironout context", agents: 4 });
@@ -2442,11 +2469,15 @@ test("full-sprint ironout prompt excludes raw reports and embeds only synthesis,
 	assert.match(ironoutReq.prompt, /<retained-report-paths>/);
 	assert.match(ironoutReq.prompt, /brainstorm\/lens-1\/findings\.md/);
 	assert.match(ironoutReq.prompt, /brainstorm\/lens-1\/cross-review\.md/);
-	// Must include synthesis and red-team.
+	// Must embed the original user directive as the authoritative scope contract.
+	assert.match(ironoutReq.prompt, /<user-directive>/);
+	assert.match(ironoutReq.prompt, /Ironout context/);
+	// Must include synthesis and red-team as supporting material.
+	assert.match(ironoutReq.prompt, /<brainstorm-synthesis>/);
 	assert.match(ironoutReq.prompt, /<red-team>/);
 	assert.match(ironoutReq.prompt, /<authoritative-input>/);
-	// Context paths reduced to synthesis + red-team only (not raw reports).
-	assert.deepEqual(ironoutReq.contextPaths, ["brainstorm/synthesis.md", "brainstorm/red-team.md"]);
+	// Context paths carry the original input plus synthesis and red team (not raw reports).
+	assert.deepEqual(ironoutReq.contextPaths, ["input.md", "brainstorm/synthesis.md", "brainstorm/red-team.md"]);
 });
 
 test("standalone ironout prompt does not embed raw reports when none exist", async () => {
@@ -3219,7 +3250,7 @@ async function makeBranchingPlanDir(planDir: string): Promise<void> {
 		"", "## Model Assignments", "",
 		"- Basic Implementer: deepseek/deepseek-v4-flash:max",
 		"- Advanced Implementer: deepseek/deepseek-v4-pro:max",
-		"- Validation: openai-codex/gpt-5.6-terra:high",
+		"- Validation: openai-codex/gpt-5.6-luna:xhigh",
 		"- phase-01-first.md: advanced",
 		"- phase-02-second.md: advanced",
 		"- phase-03-third.md: basic",
@@ -3228,7 +3259,7 @@ async function makeBranchingPlanDir(planDir: string): Promise<void> {
 		"- Gate: post-phase validator review-and-repair must PASS before a phase is complete.",
 		"- Dependencies: no dependent phase starts before every dependency has PASS.",
 		"", "## Final Integration", "",
-		"- Integration: after all phases PASS, run final integration validation with openai-codex/gpt-5.6-terra:high.", "",
+		"- Integration: after all phases PASS, run final integration validation with openai-codex/gpt-5.6-luna:xhigh.", "",
 	].join("\n");
 	const planFiles = [
 		{ path: "concepts.md", content: concepts },
@@ -4070,7 +4101,11 @@ test("BLOCKED evidence remains active while dependents wait, and shutdown record
 
 test("version 1 execution records remain parseable but reject append operations", async () => {
 	const { root, internal } = await project();
-	await makePlanDir(path.join(root, "plans", "legacy-readable"));
+	const legacyPlanDir = path.join(root, "plans", "legacy-readable");
+	await makePlanDir(legacyPlanDir);
+	// v1-era plans froze the legacy validation tuple; keep the fixture independent of the active configuration.
+	const legacyOrchestration = await readFile(path.join(legacyPlanDir, "orchestration.md"), "utf8");
+	await writeFile(path.join(legacyPlanDir, "orchestration.md"), legacyOrchestration.replace(/openai-codex\/gpt-5\.6-luna:xhigh/g, "openai-codex/gpt-5.6-terra:high"));
 	const { handle } = await startExecutionRecord(internal, root, "plans/legacy-readable");
 	let revision = await checkpointExecutionRecord(handle, 0, "implementation", "phase-01-first", undefined, "Legacy implementation.", undefined);
 	revision = await checkpointExecutionRecord(handle, revision, "phase_validation", "phase-01-first", "PASS", "Legacy PASS.", undefined);
