@@ -55,6 +55,7 @@ const RECORD_RELATIVE_PATH = "execution/record.json";
 const MANIFEST_FILENAME = "manifest.md";
 const MAX_REPORT_BYTES = 100_000;
 const MAX_CHANGED_PATHS = 500;
+// Legacy v1 parsing fallbacks used only when a record's frozen tuples are absent.
 const IMPL_TUPLE: ModelTuple = { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" };
 const VAL_TUPLE: ModelTuple = { provider: "openai-codex", model: "gpt-5.6-terra", thinking: "high" };
 const mutationQueues = new Map<string, Promise<void>>();
@@ -394,19 +395,19 @@ function parseLegacyRecord(record: Record<string, unknown>, runDirectory: string
 	if (!Array.isArray(legacyPhases) || !sameStringSet(legacyPhases.map((phase) => String(phase.phase)), common.frozen.phases)) throw new Error("Execution phase evidence does not match the frozen ledger.");
 	let transitions = 0;
 	const phases: PhaseEvidence[] = legacyPhases.map((phase) => {
-		const implementation = phase.implementation ? parseEvidence(phase.implementation, IMPL_TUPLE, { legacy: true }) as ExecutionEvidence : undefined;
+		const implementation = phase.implementation ? parseEvidence(phase.implementation, common.frozen.implementationModel ?? IMPL_TUPLE, { legacy: true }) as ExecutionEvidence : undefined;
 		if (implementation) transitions++;
 		const validations: ValidationEvidence[] = [];
 		if (phase.validator) {
 			if (!implementation) throw new Error("Validator evidence precedes implementation evidence.");
-			validations.push(parseEvidence(phase.validator, VAL_TUPLE, { validator: true, attempt: 1, legacy: true }) as ValidationEvidence);
+			validations.push(parseEvidence(phase.validator, common.frozen.validationModel ?? VAL_TUPLE, { validator: true, attempt: 1, legacy: true }) as ValidationEvidence);
 			transitions++;
 		}
 		return { phase: String(phase.phase), ...(implementation ? { implementation } : {}), validations };
 	});
 	const integrationValidations: ValidationEvidence[] = [];
 	if (record.integration) {
-		integrationValidations.push(parseEvidence(record.integration, VAL_TUPLE, { validator: true, attempt: 1, legacy: true }) as ValidationEvidence);
+		integrationValidations.push(parseEvidence(record.integration, common.frozen.validationModel ?? VAL_TUPLE, { validator: true, attempt: 1, legacy: true }) as ValidationEvidence);
 		transitions++;
 		if (!phases.every((phase) => latestValidation(phase)?.verdict === "PASS")) throw new Error("Integration evidence precedes all phase PASS evidence.");
 	}

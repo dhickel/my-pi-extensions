@@ -2,6 +2,66 @@
 
 Record accepted decisions, justification, alternatives, caveats, affected specifications, source, and review timing.
 
+## 2026-09-05 — Job plans require corrective red-team PASS before publication
+
+- Decision: every complete Job Planner candidate is reviewed section-by-section by the configured `redTeamValidator` before publication. The validator applies safely inferable corrections and returns heavy contradictions, missing authority, or insufficient context as a typed unresolved-issue handoff. The root planning agent must record exact user-answer evidence, ask through the existing question tools, and resubmit until every prior issue is explicitly reconciled and the validator returns PASS; only the validator's corrected passing plan may be published.
+- Justification: unresolved omissions, inconsistencies, and architectural contradictions in finalized plans were causing avoidable senior repair loops during implementation. Moving a corrective red-team gate before publication catches these defects while decisions are still in planning context.
+- Alternative and tradeoff: publish the first candidate and rely on jog/senior repair (rejected: defects surface too late), let the validator guess every answer (rejected: it would exceed user authority), or let the validator question the user directly (rejected: root planning retains user interaction and decision ownership).
+- Caveat: Job Planner now requires the Sprint Planner extension's version-1 agent-assignment event-bus service plus availability and authentication for the exact `redTeamValidator` tuple. A missing service, provider failure, malformed validator output, cancellation, or unresolved handoff blocks publication.
+- Affected specification: `job-planner-suite.md` and `sprint-planner-suite.md`; Job Planner core, extension, red-team runner, tests, README, and jog skill; Sprint Planner agent-configuration service, extension, tests, README, and AGENTS guidance.
+- Source: user direction on 2026-09-05.
+- Review timing: after the first real Job Planner validation handoff and whenever the validation result schema or assignment service changes.
+
+## 2026-09-05 — Dedicated red-team validator uses GPT-6 Astra high
+
+- Decision: add a `redTeamValidator` assignment under a dedicated Red Team configuration area and assign it `MODEL_PROFILES.astraHigh` (`openai-codex/gpt-6-astra:high`). The existing `brainstormRedTeam` and `brainstormWorker2` assignments remain unchanged.
+- Justification: user direction to make red-team validation an explicit centrally configured responsibility.
+- Alternative and tradeoff: reuse `brainstormRedTeam` without a distinct slot (rejected: it would not expose the requested red-team validation assignment independently).
+- Caveat: workflow consumers must explicitly resolve `redTeamValidator`; Job Planner now does so through the Sprint Planner extension's version-1 agent-assignment event-bus service.
+- Affected specification: `sprint-planner-suite.md`; `sprint-planner/configs/default.ts`, `sprint-planner/types.ts`, `sprint-planner/AGENTS.md`, `sprint-planner/README.md`, and configuration tests.
+- Source: user direction on 2026-09-05.
+- Review timing: when red-team validation is integrated into a workflow or the active model configuration changes.
+
+## 2026-09-05 — Former Sol assignments move to GPT-6 Astra
+
+- Decision: the active `default` sprint-planner configuration moves only the former Sol assignments — brainstorm red team, ironout author, advanced planner/advisor, and `seniorAgent` — to `openai-codex/gpt-6-astra`, preserving their existing thinking levels. Luna and DeepSeek assignments remain unchanged. The senior-agent skill continues to resolve its tuple from `seniorAgent` and contains no inline model tuple.
+- Justification: user direction to replace the configured Sol routes with GPT-6 Astra while leaving unrelated model assignments intact and preventing senior-agent guidance from retaining an obsolete inline Sol reference.
+- Alternative and tradeoff: move every active route to Astra (rejected: only former Sol assignments were requested); remove legacy profile entries (rejected: they remain useful for historical parsing and compatibility).
+- Caveat: previously generated plans and historical execution records retain their frozen or legacy tuples; only newly resolved former Sol assignments use Astra. Separate skills with intentionally fixed contracts are unchanged.
+- Affected specification: `sprint-planner-suite.md`; `sprint-planner/AGENTS.md`, `sprint-planner/README.md`, `sprint-planner/types.ts`, `sprint-planner/configs/default.ts`, and model-route tests.
+- Source: user direction on 2026-09-05.
+- Review timing: when the active model configuration or senior-agent routing contract changes.
+
+## 2026-08-18 — Brainstorm redesign: 3 domains, two workers per domain, synthesis over all findings, red team resolves and repairs
+
+- Decision: the brainstorm workflow now routes exactly 3 domains; every domain is explored independently by worker 1 (`openai-codex/gpt-5.6-luna:max`) and worker 2 (`deepseek/deepseek-v4-flash:max`) for six `worker-1.md`/`worker-2.md` findings; the same-session all-to-all cross-review stage is removed. The synthesis condenses all findings and explicitly records where the workers differ in opinion; the red team then receives every raw finding plus the synthesis, picks the best path on disagreements, and checks for undersights or oversights — specification creep, over-abstraction, and vital omissions are all failures, and each oversight it finds must be stated and solved, not merely flagged. The `--agents` option (2–8 workers) is removed from `/sprint`, `/brainstorm`, and `sprint_brainstorm`; the domain count is fixed. `brainstormWorker` is replaced in the configuration schema by `brainstormWorker1` and `brainstormWorker2`.
+- Justification: user direction. A fixed 3-domain × 2-worker fan-out pairs a high-reasoning worker with a fast independent second opinion from a different provider family, and moving disagreement surfacing and resolution into synthesis and the red team removes a redundant review round while giving the red team the full raw evidence it needs to catch what every worker missed.
+- Alternative and tradeoff: keep the same-session all-to-all cross-review barrier (rejected: the user's pipeline description replaces it) or keep `--agents` as a domain-count override (rejected: the workflow fixes 3 domains and 6 findings). Worker 2's DeepSeek assignment deliberately reintroduces one DeepSeek tuple into runtime use, partially superseding the 2026-08-14 migration decision for this slot only.
+- Caveat: `deepseek/deepseek-v4-flash:max` is a runtime-used tuple again (worker 2); basic/advanced implementers, validators, and all review slots remain luna/sol as decided on 2026-08-14. Legacy execution-record parsing keeps its DeepSeek label fallback. Previously persisted `/sprint` state without an `agents` field loads normally; the state schema no longer records brainstorm concurrency.
+- Affected specification: `sprint-planner-suite.md`; sprint-planner `AGENTS.md`, `README.md`, `configs/default.ts`, `types.ts`, `prompts.ts`, `commands.ts`, `engine.ts`, `index.ts`, and `artifacts.ts`.
+- Source: user direction on 2026-08-18.
+- Review timing: on the next brainstorm workflow or model-profile change.
+
+## 2026-08-14 — Runtime model routes migrate fully off DeepSeek; lite configuration removed; exploration moves to GPT-5.6 Luna high
+
+- Decision: the active `default` sprint-planner configuration assigns `brainstormWorker` (and therefore the brainstorm cross-review workers, which reuse the same tuple) to `openai-codex/gpt-5.6-luna:max`, `basicImplementer` to `openai-codex/gpt-5.6-luna:high`, and `advancedImplementer` to `openai-codex/gpt-5.6-luna:max`; new `lunaHigh` and `lunaMax` entries were added to `MODEL_PROFILES` in `types.ts`. The all-DeepSeek `lite` configuration was removed entirely (`configs/lite.ts` deleted, its registration and tests removed); `default` is the only installed configuration. The `exploration` skill's fixed contract moved to `openai-codex/gpt-5.6-luna:high`, and the job-planner/jog exploration-team references follow it. The `orchestrate` skill keeps the plan-owned model contract (tuples advanced planning resolved from configuration and embedded in the validated plan are authoritative) and falls back to the active configuration's `basicImplementer`/`advancedImplementer`/`phaseValidator`/`seniorAgent` assignments only when the input carries no validated model assignments; the `jog` skill resolves its delegated-edit tuples the same way. DeepSeek entries remain in the `MODEL_PROFILES` catalog, and the legacy v1 execution-record parsing fallback tuple remains, both for label translation and reading pre-existing records.
+- Justification: user direction. Luna was selected for the migrated implementation and exploration routes, tiered by thinking level: `high` for basic implementation and exploration, `max` for advanced implementation and brainstorm findings/cross-review, and `xhigh` for review and validation slots. The all-DeepSeek lite alternative was removed rather than maintained.
+- Alternative and tradeoff: keep DeepSeek Flash/Pro on the implementation profiles (rejected by the user) or keep the lite configuration repointed at openai-codex models (rejected by the user: remove it).
+- Caveat: validated plans published before this change keep their plan-owned tuples and remain authoritative for their own orchestration; only new planning runs resolve the new tuples. Older dated decision entries in this file retain the tuples decided at the time and are superseded by this entry.
+- Affected specification: `sprint-planner-suite.md` and `job-planner-suite.md`; sprint-planner `AGENTS.md`, `README.md`, `configs/default.ts`, `configs/index.ts`, `types.ts`, and `prompts.ts`; the `exploration` skill, the `jog` skill, and job-planner `index.ts`/`README.md`.
+- Source: user direction on 2026-08-14.
+- Review timing: on the next model-profile or configuration-structure change.
+
+## 2026-08-14 — Jog gains a fixed sol:medium final validation pass
+
+- Decision: after every completed domain holds a PASS verdict from the luna domain validation loop and the root-run validation gate is complete, jog runs one final fresh-eyes review of the complete job at a fixed contract: `openai-codex` / `gpt-5.6-sol` / thinking `medium`, read-only (`["read", "bash"]`), never inherited or substituted. The reviewer returns `Verdict` (PASS or BLOCKED) with `Findings`, `Verified Strengths`, and `Residual Risks`; the root independently confirms every finding, repairs defects itself, and reruns confirmation passes with the same fixed tuple until PASS. A PASS verdict gates the completion report; BLOCKED handling mirrors the luna loop, including senior escalation for findings that resist root repair. The tuple is fixed in the skill, not resolved from the sprint-planner configuration.
+- Justification: user direction. The luna loop validates each domain; a final independent pass at a fixed cheaper tuple catches integration-level defects the domain-local reviews miss, and the fixed contract keeps the final gate stable even if the sprint-planner configuration changes.
+- Alternative and tradeoff: resolve the final pass from the configuration's `seniorAgent` assignment (rejected: the user asked for a fixed sol:medium gate) or skip the final pass (rejected: no fresh-eyes review of the complete job).
+- Caveat: the reviewer is read-only and its report is evidence, not authority; the root owns every repair and the completion claim. If the tuple is unavailable, jog reports the exact failure and does not claim completion.
+- Affected specification: `job-planner-suite.md`; the `jog` skill and the job-planner README.
+- Source: user direction on 2026-08-14.
+- Review timing: if the final-pass tuple, its trigger point, or its verdict handling changes.
+
 ## 2026-08-14 — Sprint planning re-anchors scope to the user directive
 
 - Decision: in full sprints, the ironout author receives the user's original directive (or the handoff provided to brainstorming) as the authoritative scope contract, alongside the brainstorm synthesis and red-team material as supporting implementation approaches. Brainstorming produces implementation approaches for the directive and may include some quality-of-life and supporting features that genuinely serve it, but it must tighten and refine the request rather than balloon or expand scope. Never-defer applies to user-directive work and decided-on features: all such work must be completed fully, and mocks, stubs, placeholders, deferred work, partial implementations, and bare-minimum shortcuts are acceptable only when the user directive itself asks for them. Phase budgets keep the extra-large tier (11–20 phases) with lettered subphases; most sprints should normally land around 5–10 phases, and planning makes complete plans without trimming work to save tokens.

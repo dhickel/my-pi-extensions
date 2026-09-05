@@ -1,3 +1,4 @@
+export * from "./agent-configuration-service.ts";
 export * from "./artifacts.ts";
 export * from "./commands.ts";
 export * from "./configs/index.ts";

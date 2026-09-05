@@ -4,9 +4,8 @@ export const LEASE_VERSION = 1;
 export const RUN_RECORD_SCHEMA_VERSION = 1;
 export const EXECUTION_RECORD_VERSION = 2;
 export const LEGACY_EXECUTION_RECORD_VERSION = 1;
-export const DEFAULT_BRAINSTORM_AGENTS = 4;
-export const MIN_BRAINSTORM_AGENTS = 2;
-export const MAX_BRAINSTORM_AGENTS = 8;
+export const BRAINSTORM_DOMAINS = 3;
+export const BRAINSTORM_WORKERS_PER_DOMAIN = 2;
 export const MAX_STEP_ATTEMPTS = 3;
 
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
@@ -24,6 +23,12 @@ export const MODEL_PROFILES = {
 	solMax: { provider: "openai-codex", model: "gpt-5.6-sol", thinking: "max" },
 	terraHigh: { provider: "openai-codex", model: "gpt-5.6-terra", thinking: "high" },
 	lunaXhigh: { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "xhigh" },
+	lunaHigh: { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "high" },
+	lunaMax: { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "max" },
+	astraMedium: { provider: "openai-codex", model: "gpt-6-astra", thinking: "medium" },
+	astraHigh: { provider: "openai-codex", model: "gpt-6-astra", thinking: "high" },
+	astraMax: { provider: "openai-codex", model: "gpt-6-astra", thinking: "max" },
+	// Retained for active assignments, label translation, and legacy record parsing.
 	deepseekProMax: { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" },
 	deepseekProHigh: { provider: "deepseek", model: "deepseek-v4-pro", thinking: "high" },
 	deepseekFlashMax: { provider: "deepseek", model: "deepseek-v4-flash", thinking: "max" },
@@ -33,9 +38,11 @@ export const MODEL_PROFILES = {
 /** Every agent whose model assignment is controlled by the loaded configuration. */
 export type SprintPlannerAgentId =
 	| "roleRouter"
-	| "brainstormWorker"
+	| "brainstormWorker1"
+	| "brainstormWorker2"
 	| "brainstormSynthesis"
 	| "brainstormRedTeam"
+	| "redTeamValidator"
 	| "ironoutAuthor"
 	| "ironoutReviewer"
 	| "planner"
@@ -110,7 +117,6 @@ export interface SprintState {
 	stage: SprintStage;
 	directivePath: string;
 	inputArtifact: ArtifactRecord;
-	agents: number;
 	steps: Record<string, StepState>;
 	error?: string;
 	createdAt: string;
@@ -225,7 +231,6 @@ export interface SprintRunOptions {
 	internalDevPath: string;
 	runId: string;
 	directive: string;
-	agents?: number;
 }
 
 export interface StandaloneRunOptions {
@@ -233,7 +238,6 @@ export interface StandaloneRunOptions {
 	internalDevPath: string;
 	id: string;
 	directive: string;
-	agents?: number;
 	interactive?: boolean;
 }
 

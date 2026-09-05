@@ -17,9 +17,9 @@ The package manifest loads `index.ts` as an extension and `skills/orchestrate/SK
 
 The extension registers:
 
-- `/sprint [--name <slug>] [--agents 2..8] <prompt>` for brainstorm → ironout → corrected advanced planning.
+- `/sprint [--name <slug>] <prompt>` for brainstorm → ironout → corrected advanced planning.
 - `/sprint status|pause|resume|reset|list|doctor [run-id]` for persisted planning-run management and read-only discovery.
-- `/brainstorm [--agents 2..8] <prompt>` for a stateless brainstorm.
+- `/brainstorm <prompt>` for a stateless brainstorm.
 - `/ironout [--interactive|--auto] <prompt>` for a stateless handoff.
 - `/advanceplan <prompt>` for a stateless corrected plan.
 - `sprint_brainstorm` as the agent-callable equivalent of `/brainstorm`.
@@ -40,29 +40,31 @@ Bare start commands open Pi's multiline editor. Standalone management is limited
 
 The extension engine owns planning stage sequencing, exact planning model tuples, brainstorming concurrency, typed planning handoffs, structural gates, retries, state transitions, cleanup, repeatable run-record discovery, versioned lease management, read-only diagnosis, structured plan validation, and execution-record persistence. Slash-command work starts in the background so the root session remains usable; the five agent-callable planning tools wait for the same engine-owned standalone result.
 
-Brainstorm, ironout, and advanced-planning tuples are exact assignments in the schema-conforming configuration files under `sprint-planner/configs/`, selecting reusable `MODEL_PROFILES` tuples from `types.ts`. `configs/default.ts` is registered as the sole default, and extension initialization loads it once before supplying the same snapshot to every engine. No caller or runtime selection exists yet.
+Brainstorm, ironout, advanced-planning, execution, and red-team-validation tuples are exact assignments in the schema-conforming configuration files under `sprint-planner/configs/`, selecting reusable `MODEL_PROFILES` tuples from `types.ts`. `configs/default.ts` is registered as the sole default, and extension initialization loads it once before supplying the same snapshot to every engine. The extension exposes individual role tuples through a version-1 agent-assignment event-bus service; Job Planner resolves `redTeamValidator` through this service and fails closed when the service or exact tuple is unavailable. No caller or runtime selection exists yet.
 
 All extension model tuples are exact:
 
 | Responsibility | Provider/model | Thinking |
 | --- | --- | --- |
 | Brainstorm role routing | `openai-codex/gpt-5.6-luna` | `xhigh` |
-| Brainstorm and cross-review workers | `deepseek/deepseek-v4-pro` | `max` |
+| Brainstorm worker 1 (findings) | `openai-codex/gpt-5.6-luna` | `max` |
+| Brainstorm worker 2 (findings) | `deepseek/deepseek-v4-flash` | `max` |
 | Brainstorm synthesis | `openai-codex/gpt-5.6-luna` | `xhigh` |
-| Brainstorm red team | `openai-codex/gpt-5.6-sol` | `high` |
-| Ironout author / corrective reviewer | `openai-codex/gpt-5.6-sol` / `openai-codex/gpt-5.6-luna` | `high` / `xhigh` |
-| Advanced planner / adviser | `openai-codex/gpt-5.6-sol` | `high` / `max` |
+| Brainstorm red team | `openai-codex/gpt-6-astra` | `high` |
+| Red-team validation | `openai-codex/gpt-6-astra` | `high` |
+| Ironout author / corrective reviewer | `openai-codex/gpt-6-astra` / `openai-codex/gpt-5.6-luna` | `high` / `xhigh` |
+| Advanced planner / adviser | `openai-codex/gpt-6-astra` | `high` / `max` |
 | Advanced decomposition, concepts, orchestration, and phase reviewers | `openai-codex/gpt-5.6-luna` | `xhigh` |
 
 Unavailable models, authentication, or thinking capabilities are errors; the runner does not substitute or clamp them. Every extension child receives planning-mode read-only project tools. Advanced planners retain a bounded advisory tool; no child receives coding tools or a toolchain-blocker tool.
 
 ## Brainstorm Contract
 
-Role routing produces complementary broad lenses. The default is four workers; the accepted range is two through eight. Each worker submits `findings.md`, then the same session reviews every other worker report and submits `cross-review.md`. Synthesis cannot start until every finding and cross-review exists. The red-team prompt contains only the synthesis.
+Role routing produces exactly 3 complementary domains. Two workers explore every domain independently — worker 1 at `openai-codex/gpt-5.6-luna:max` and worker 2 at `deepseek-v4-flash:max` — for six `worker-1.md` / `worker-2.md` findings. Synthesis cannot start until every domain has both worker findings. The synthesis condenses all findings and explicitly records where the workers differ in opinion; the red team then reviews every raw finding plus the synthesis, picks the best path on disagreements, checks for undersights and oversights (specification creep, over-abstraction, and vital omissions are all failures), and solves each oversight it finds rather than only flagging it.
 
 Brainstorming produces implementation approaches for the user's directive. Approaches may include some quality-of-life and supporting features that genuinely serve the directive, but they must not balloon or expand scope: workers tighten and refine the request while weighing options and concerns, and avoid out-of-domain features and work.
 
-The cross-review barrier is unconditional for `/brainstorm`, `/sprint`, and `sprint_brainstorm`. Generic subagent calls are not equivalent to this engine-owned lifecycle.
+The all-findings barrier is unconditional for `/brainstorm`, `/sprint`, and `sprint_brainstorm`. Generic subagent calls are not equivalent to this engine-owned lifecycle.
 
 ## Ironout Contract
 
@@ -96,7 +98,7 @@ Advanced planning resolves the loaded configuration and hard-codes the model con
 
 The skill requires Pi's subagent spawn, poll, status, and cancel tools. Before edits, one atomic spawn batch preflights every distinct assigned implementation tuple plus the plan-owned validation tuple with no-op agents. Missing models, authentication, tools, thinking support, or an unreadable configuration stop execution; the skill never substitutes another tuple. One unsplit phase maps to one implementation-agent session at its validated plan assignment. A phase with explicit lettered subphases maps each subphase to one sequential session at the parent phase's assignment in letter order; no runtime token calculation or enforcement is performed.
 
-Every implementation wave fully settles before validation. Every phase receives one independent review-and-repair agent at the plan-owned validation tuple with full edit authority only after its unsplit implementation or all of its lettered subphases complete. The validator inspects actual repository state, checks every criterion, repairs in-scope defects itself, reruns required checks, and returns exactly `VERDICT: PASS` or `VERDICT: BLOCKED` with evidence sections. There is no read-only validation mode, `VERDICT: REPAIR`, or separate DeepSeek repair handoff. A malformed or missing verdict is retried once, then blocks. A valid `BLOCKED` verdict is a durable retryable attempt: disjoint siblings may continue, the same phase may receive later validation attempts, and dependents wait until every dependency's latest verdict is `PASS`. After all phases pass, one integration validator at the plan-owned validation tuple performs the same review-and-repair gate across the complete workflow.
+Every implementation wave fully settles before validation. Every phase receives one independent review-and-repair agent at the plan-owned validation tuple with full edit authority only after its unsplit implementation or all of its lettered subphases complete. The validator inspects actual repository state, checks every criterion, repairs in-scope defects itself, reruns required checks, and returns exactly `VERDICT: PASS` or `VERDICT: BLOCKED` with evidence sections. There is no read-only validation mode, `VERDICT: REPAIR`, or a separate repair handoff. A malformed or missing verdict is retried once, then blocks. A valid `BLOCKED` verdict is a durable retryable attempt: disjoint siblings may continue, the same phase may receive later validation attempts, and dependents wait until every dependency's latest verdict is `PASS`. After all phases pass, one integration validator at the plan-owned validation tuple performs the same review-and-repair gate across the complete workflow.
 
 Changed-file evidence is truthful rather than target-authorized. Unexpected canonical safe paths are persisted and returned as structured plan-drift warnings; the frozen target map remains immutable. The skill widens only its observed write sets, reassesses overlap before validators or later phases, serializes validators when discovered write sets overlap, and blocks future unsafe authoritative implementation waves rather than silently changing their topology.
 
@@ -108,7 +110,7 @@ The skill owns no extension state machine, background job, `.state.json`, child-
 
 Standalone planning publications are:
 
-- `.internal-dev/brainstorm/<effort>/` for findings, cross-reviews, synthesis, and red team.
+- `.internal-dev/brainstorm/<effort>/` for worker findings (both workers per domain), synthesis, and red team.
 - `.internal-dev/handoffs/<id>.md` for the corrected signed handoff.
 - `.internal-dev/plans/<plan-id>/` for corrected concepts, orchestration, and flat phases, with review in `.internal-dev/reviews/`.
 
@@ -191,7 +193,7 @@ The tool never creates, normalizes, touches, or rewrites any plan file. It rejec
 
 ## Failure-Safe Fan-Outs and Retry Accounting
 
-Brainstorm cross-reviews and corrective planning stages use scope-local fan-out primitives:
+Brainstorm worker findings and corrective planning stages use scope-local fan-out primitives:
 
 - A failed sibling cancels and settles only its own fan-out, not unrelated workers.
 - Interruption does not consume the retry budget; only completed failures count against the attempt limit (max 3 attempts per step).
@@ -200,6 +202,6 @@ Brainstorm cross-reviews and corrective planning stages use scope-local fan-out 
 
 ## Validation
 
-The package test suite uses fake runners and incurs no model cost. It covers raw prompt preservation, exact planning routes, all-to-all same-session cross-review, structural barriers, exact orchestration semantics, phase budgets, instruction-only estimate guidance, validator acceptance of duration wording, ordered per-component correction, semantic retry/resume, flat no-replace publication and ownership-safe failure handling, planning-only completion, pause/resume, cleanup, reset and symlink protection, skill packaging, absence of the extension `/orchestrate` command, the skill's exact implementation/validation model contract, run-record discovery, lease acquisition and inspection, list and read-only doctor outputs, structured plan validation with categorized findings, execution-record lifecycle (start/checkpoint/finish with revision gating), and immutable source identity preservation.
+The package test suite uses fake runners and incurs no model cost. It covers raw prompt preservation, exact planning routes, the two-workers-per-domain findings barrier, structural barriers, exact orchestration semantics, phase budgets, instruction-only estimate guidance, validator acceptance of duration wording, ordered per-component correction, semantic retry/resume, flat no-replace publication and ownership-safe failure handling, planning-only completion, pause/resume, cleanup, reset and symlink protection, skill packaging, absence of the extension `/orchestrate` command, the skill's exact implementation/validation model contract, run-record discovery, lease acquisition and inspection, list and read-only doctor outputs, structured plan validation with categorized findings, execution-record lifecycle (start/checkpoint/finish with revision gating), and immutable source identity preservation.
 
 Resource validation uses Pi RPC `get_commands`: extension commands must omit `orchestrate`, while `skill:orchestrate` must resolve to the package skill path. `get_commands` must also resolve `sprint_validate_plan` and `sprint_execution_record` as registered tools.

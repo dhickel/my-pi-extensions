@@ -17,6 +17,7 @@ import {
 	inspectPlanDirectory,
 	interruptActiveRecord,
 	loadDefaultSprintPlannerAgentConfiguration,
+	registerAgentConfigurationService,
 	parseCommand,
 	commandUsage,
 	resolveRunDirectory,
@@ -150,6 +151,7 @@ export default function sprintPlannerExtension(pi: ExtensionAPI) {
 	let bound: Binding | undefined;
 	// This load-time snapshot resolves the active configuration (currently default) once at extension load.
 	const currentAgentConfiguration = loadDefaultSprintPlannerAgentConfiguration();
+	registerAgentConfigurationService(pi.events, currentAgentConfiguration);
 
 	function updateFooter(progress?: EngineProgress) {
 		try {
@@ -411,7 +413,7 @@ export default function sprintPlannerExtension(pi: ExtensionAPI) {
 			const desired = timeId(parsed.name, directive);
 			const runId = await uniqueId(location.internalDevPath, desired, "sprints");
 			const engine = makeEngine("sprint", runId);
-			const promise = engine.runSprint({ projectRoot: location.projectRoot, internalDevPath: location.internalDevPath, runId, directive, agents: parsed.agents });
+			const promise = engine.runSprint({ projectRoot: location.projectRoot, internalDevPath: location.internalDevPath, runId, directive });
 			const job: ActiveJob = { workflow: "sprint", runId, engine, promise, internalDevPath: location.internalDevPath };
 			activeSprint = job;
 			if (engine.progress) updateFooter(engine.progress);
@@ -453,7 +455,7 @@ export default function sprintPlannerExtension(pi: ExtensionAPI) {
 			const directive = acceptWorkflowInput(rawInput);
 			const id = await uniqueId(location.internalDevPath, timeId(undefined, directive), workflow === "brainstorm" ? "brainstorm" : workflow === "advanceplan" ? "plans" : "handoffs");
 			const engine = makeEngine(workflow, id);
-			const options = { projectRoot: location.projectRoot, internalDevPath: location.internalDevPath, id, directive, agents: parsed.agents, interactive: parsed.interactive };
+			const options = { projectRoot: location.projectRoot, internalDevPath: location.internalDevPath, id, directive, interactive: parsed.interactive };
 			const promise = workflow === "brainstorm" ? engine.runStandaloneBrainstorm(options) : workflow === "ironout" ? engine.runStandaloneIronout(options) : engine.runStandaloneAdvancePlan(options);
 			const job: ActiveJob = { workflow, runId: id, engine, promise, internalDevPath: location.internalDevPath };
 			standalone.set(workflow, job);
@@ -469,12 +471,11 @@ export default function sprintPlannerExtension(pi: ExtensionAPI) {
 		name: "sprint_brainstorm",
 		label: "Run sprint brainstorm",
 		description: `${BRAINSTORM_TOOL_DESCRIPTION} Starts in the background; use sprint_poll until it completes.`,
-		promptSnippet: "Run the engine-owned brainstorm with mandatory all-to-all cross-review before synthesis",
+		promptSnippet: "Run the engine-owned brainstorm: three domains, two workers each, synthesis, then red team over every finding",
 		promptGuidelines: [...BRAINSTORM_TOOL_GUIDELINES, "After starting the workflow, call sprint_poll repeatedly until it returns the terminal result. Handle queued user input first, then return to polling."],
 		parameters: Type.Object(
 			{
 				prompt: Type.String({ minLength: 1, maxLength: 2_000_000, description: "The authoritative brainstorming prompt." }),
-				agents: Type.Optional(Type.Integer({ minimum: 2, maximum: 8, description: "Number of complementary brainstorm workers. Default: 4." })),
 			},
 			{ additionalProperties: false },
 		),
@@ -488,14 +489,14 @@ export default function sprintPlannerExtension(pi: ExtensionAPI) {
 			const directive = acceptWorkflowInput(params.prompt);
 			const id = await uniqueId(location.internalDevPath, timeId(undefined, directive), "brainstorm");
 			const engine = makeEngine("brainstorm", id);
-			const promise = engine.runStandaloneBrainstorm({ projectRoot: location.projectRoot, internalDevPath: location.internalDevPath, id, directive, agents: params.agents });
+			const promise = engine.runStandaloneBrainstorm({ projectRoot: location.projectRoot, internalDevPath: location.internalDevPath, id, directive });
 			const job: ActiveJob = { workflow: "brainstorm", runId: id, engine, promise, internalDevPath: location.internalDevPath };
 			standalone.set("brainstorm", job);
 			if (engine.progress) updateFooter(engine.progress);
 			void monitorCompletion(job);
 			return {
 				content: [{ type: "text" as const, text: `Brainstorm ${id} started in the background. Call sprint_poll until it completes.` }],
-				details: { id, status: "started", crossReviewRequired: true },
+				details: { id, status: "started" },
 			};
 		},
 	});

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createEventBus } from "@earendil-works/pi-coding-agent";
 import { mkdirSync, renameSync, statSync } from "node:fs";
 import fsPromises, { lstat, mkdtemp, mkdir, readFile, readdir, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -16,7 +17,6 @@ import {
 	classifyRun,
 	CONCEPT_HEADINGS,
 	createSprintRun,
-	DEFAULT_BRAINSTORM_AGENTS,
 	deleteSprintRun,
 	discoverSprintRuns,
 	doctorExecutionRecord,
@@ -36,6 +36,7 @@ import {
 	PHASE_HEADINGS,
 	publishDirectoryExclusively,
 	releaseLease,
+	registerAgentConfigurationService,
 	removeEmptyReservation,
 	removeOwnedDirectory,
 	repairManifest,
@@ -133,8 +134,8 @@ function orchestrationFor(size: "small" | "medium" | "large" | "extra-large", ph
 		"",
 		"## Model Assignments",
 		"",
-		"- Basic Implementer: deepseek/deepseek-v4-flash:max",
-		"- Advanced Implementer: deepseek/deepseek-v4-pro:max",
+		"- Basic Implementer: openai-codex/gpt-5.6-luna:high",
+		"- Advanced Implementer: openai-codex/gpt-5.6-luna:max",
 		"- Validation: openai-codex/gpt-5.6-luna:xhigh",
 		...phasePaths.map((phasePath, index) => `- ${phasePath}: ${index === phasePaths.length - 1 ? "basic" : "advanced"}`),
 		"- Implementers: exactly one assigned implementation agent per unsplit phase, or one sequential assigned agent per lettered subphase for split phases",
@@ -179,7 +180,7 @@ class FakeRunner implements WorkflowRunner {
 				ok: true,
 				submission: {
 					kind: "roles",
-					content: JSON.stringify({ roles: Array.from({ length: 4 }, (_, index) => ({ id: `lens-${index + 1}`, name: `Lens ${index + 1}`, lens: `Broad lens ${index + 1}` })) }),
+					content: JSON.stringify({ roles: Array.from({ length: 3 }, (_, index) => ({ id: `lens-${index + 1}`, name: `Lens ${index + 1}`, lens: `Broad lens ${index + 1}` })) }),
 				},
 				sessionPath: request.sessionPath,
 				disposition: "completed",
@@ -246,20 +247,21 @@ class DelayedRunner extends FakeRunner {
 	}
 }
 
-class CrossReviewFailureRunner extends FakeRunner {
+class WorkerFindingsFailureRunner extends FakeRunner {
 	async run(request: WorkerRequest, signal: AbortSignal): Promise<WorkerResult> {
-		if (request.id.includes("-cross-")) {
+		if (request.id.includes("-findings-") && request.id.endsWith("-w2")) {
 			this.requests.push(structuredClone(request));
-			return { ok: false, error: "cross-review unavailable", failureKind: "fatal", sessionPath: request.sessionPath, disposition: "completed" };
+			return { ok: false, error: "worker 2 findings unavailable", failureKind: "fatal", sessionPath: request.sessionPath, disposition: "completed" };
 		}
 		return super.run(request, signal);
 	}
 }
 
 test("commands enforce public option ranges and management boundaries", () => {
-	assert.equal(parseCommand("sprint", "--name Demo --agents 8 do it").name, "demo");
+	assert.equal(parseCommand("sprint", "--name Demo do it").name, "demo");
 	assert.equal(parseCommand("ironout", "--interactive requirements").interactive, true);
-	assert.throws(() => parseCommand("brainstorm", "--agents 9 task"), /2 to 8/);
+	assert.throws(() => parseCommand("brainstorm", "--agents 9 task"), /Unknown option: --agents/);
+	assert.throws(() => parseCommand("sprint", "--agents 8 do it"), /Unknown option: --agents/);
 	assert.throws(() => parseCommand("advanceplan", "resume"), /not resume/);
 	assert.throws(() => parseCommand("sprint", "cancel"), /uses pause/);
 	assert.throws(() => parseCommand("sprint", "--parallel 2 task"), /Unknown option: --parallel/);
@@ -267,7 +269,7 @@ test("commands enforce public option ranges and management boundaries", () => {
 
 test("workflow prompts remain raw and are never probed or expanded as paths", () => {
 	const pasted = "# User handoff\n\n## Scope\n\nKeep   formatting and inspect plans/demo when useful.";
-	assert.equal(parseCommand("sprint", `--agents 2 ${pasted}`).input, pasted);
+	assert.equal(parseCommand("sprint", pasted).input, pasted);
 	const longPrompt = "x".repeat(10_000);
 	assert.equal(acceptWorkflowInput(longPrompt), longPrompt);
 	assert.equal(acceptWorkflowInput("sprint-planner/README.md plus the user's additional instructions"), "sprint-planner/README.md plus the user's additional instructions");
@@ -281,9 +283,11 @@ test("agent configuration covers every sprint-planner role with exact tuples", (
 	assert.deepEqual(Object.keys(loaded), Object.keys(agents), "default config covers every agent");
 	assert.deepEqual(Object.keys(agents), [
 		"roleRouter",
-		"brainstormWorker",
+		"brainstormWorker1",
+		"brainstormWorker2",
 		"brainstormSynthesis",
 		"brainstormRedTeam",
+		"redTeamValidator",
 		"ironoutAuthor",
 		"ironoutReviewer",
 		"planner",
@@ -298,49 +302,59 @@ test("agent configuration covers every sprint-planner role with exact tuples", (
 		"integrationValidator",
 		"seniorAgent",
 	]);
-	// Model tuples
+	// Model tuples: the prior Sol routes use Astra; other active routes are unchanged.
 	for (const entry of Object.values(agents)) {
 		const m = entry.model;
 		if (m.model === "deepseek-v4-pro") assert.deepEqual(m, { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" });
 		else if (m.model === "deepseek-v4-flash") assert.deepEqual(m, { provider: "deepseek", model: "deepseek-v4-flash", thinking: "max" });
-		else if (m.thinking === "xhigh") assert.deepEqual(m, { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "xhigh" });
-		else assert.equal(m.model, "gpt-5.6-sol");
+		else if (m.model === "gpt-5.6-luna") assert.deepEqual(m, { provider: "openai-codex", model: "gpt-5.6-luna", thinking: m.thinking });
+		else assert.deepEqual(m, { provider: "openai-codex", model: "gpt-6-astra", thinking: m.thinking });
+	}
+	assert.deepEqual(agents.roleRouter.model, { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "xhigh" });
+	assert.deepEqual(agents.brainstormSynthesis.model, { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "xhigh" });
+	for (const key of ["phaseValidator", "integrationValidator"] as const) {
+		assert.deepEqual(agents[key].model, { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "xhigh" });
 	}
 	assert.deepEqual(agents.ironoutReviewer.model, { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "xhigh" });
 	// Assignments with senior-call metadata
-	assert.deepEqual(agents.planner, { model: { provider: "openai-codex", model: "gpt-5.6-sol", thinking: "high" }, maxSeniorCalls: 2, seniorAdvisor: "advisor" });
-	assert.deepEqual(agents.advisor, { model: { provider: "openai-codex", model: "gpt-5.6-sol", thinking: "max" } });
+	assert.deepEqual(agents.planner, { model: { provider: "openai-codex", model: "gpt-6-astra", thinking: "high" }, maxSeniorCalls: 2, seniorAdvisor: "advisor" });
+	assert.deepEqual(agents.advisor, { model: { provider: "openai-codex", model: "gpt-6-astra", thinking: "max" } });
 	assert.deepEqual(agents.decompositionReviewer, { model: { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "xhigh" }, maxSeniorCalls: 1, seniorAdvisor: "advisor" });
 	for (const agent of [agents.conceptsReviewer, agents.orchestrationReviewer, agents.phaseReviewer]) {
 		assert.deepEqual(agent, { model: { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "xhigh" } });
 	}
 	// Simple model-only assignments
-	for (const key of ["roleRouter", "brainstormSynthesis", "brainstormRedTeam", "ironoutAuthor", "basicImplementer", "advancedImplementer", "phaseValidator", "integrationValidator", "seniorAgent"] as const) {
+	for (const key of ["roleRouter", "brainstormWorker1", "brainstormWorker2", "brainstormSynthesis", "brainstormRedTeam", "redTeamValidator", "ironoutAuthor", "basicImplementer", "advancedImplementer", "phaseValidator", "integrationValidator", "seniorAgent"] as const) {
 		assert.deepEqual(agents[key], { model: agents[key].model });
 	}
-	assert.deepEqual(agents.brainstormWorker, { model: { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" } });
-	assert.deepEqual(agents.seniorAgent, { model: { provider: "openai-codex", model: "gpt-5.6-sol", thinking: "medium" } });
-	assert.deepEqual(agents.basicImplementer.model, { provider: "deepseek", model: "deepseek-v4-flash", thinking: "max" });
-	assert.deepEqual(agents.advancedImplementer.model, { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" });
+	assert.deepEqual(agents.brainstormWorker1, { model: { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "max" } });
+	assert.deepEqual(agents.brainstormWorker2, { model: { provider: "deepseek", model: "deepseek-v4-flash", thinking: "max" } });
+	assert.deepEqual(agents.redTeamValidator, { model: { provider: "openai-codex", model: "gpt-6-astra", thinking: "high" } });
+	assert.deepEqual(agents.seniorAgent, { model: { provider: "openai-codex", model: "gpt-6-astra", thinking: "medium" } });
+	assert.deepEqual(agents.basicImplementer.model, { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "high" });
+	assert.deepEqual(agents.advancedImplementer.model, { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "max" });
 });
 
-test("lite configuration assigns distinct flash implementers and pro planning agents", () => {
-	const lite = SPRINT_PLANNER_AGENT_CONFIGURATIONS.lite;
-	assert.deepEqual(Object.keys(lite), Object.keys(SPRINT_PLANNER_AGENT_CONFIGURATIONS.default), "lite covers every agent");
-	for (const [key, entry] of Object.entries(lite)) {
-		if (key === "basicImplementer") {
-			assert.deepEqual(entry.model, { provider: "deepseek", model: "deepseek-v4-flash", thinking: "high" }, `${key} should be DeepSeek flash high`);
-		} else if (key === "advancedImplementer") {
-			assert.deepEqual(entry.model, { provider: "deepseek", model: "deepseek-v4-flash", thinking: "max" }, `${key} should be DeepSeek flash max`);
-		} else {
-			assert.deepEqual(entry.model, { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" }, `${key} should be DeepSeek pro max`);
-		}
+test("agent configuration service exposes the configured redTeamValidator tuple", async () => {
+	const events = createEventBus();
+	const unsubscribe = registerAgentConfigurationService(events, SPRINT_PLANNER_AGENT_CONFIGURATIONS.default);
+	try {
+		const requestId = "red-team-test";
+		const response = new Promise<unknown>((resolve) => events.on(`sprint-planner:agent-assignment:response:v1:${requestId}`, resolve));
+		events.emit("sprint-planner:agent-assignment:request:v1", { version: 1, requestId, agentId: "redTeamValidator" });
+		assert.deepEqual(await response, {
+			version: 1,
+			requestId,
+			agentId: "redTeamValidator",
+			model: { provider: "openai-codex", model: "gpt-6-astra", thinking: "high" },
+		});
+		const unknownId = "unknown-test";
+		const unknownResponse = new Promise<any>((resolve) => events.on(`sprint-planner:agent-assignment:response:v1:${unknownId}`, resolve));
+		events.emit("sprint-planner:agent-assignment:request:v1", { version: 1, requestId: unknownId, agentId: "toString" });
+		assert.match((await unknownResponse).error, /Unknown sprint-planner agent assignment/);
+	} finally {
+		unsubscribe();
 	}
-	// Senior-call metadata is preserved.
-	assert.equal(lite.planner.maxSeniorCalls, 2);
-	assert.equal(lite.planner.seniorAdvisor, "advisor");
-	assert.equal(lite.decompositionReviewer.maxSeniorCalls, 1);
-	assert.equal(lite.decompositionReviewer.seniorAdvisor, "advisor");
 });
 
 test("plan validation enforces a flat concepts plus orchestration plus contiguous phases publication", () => {
@@ -372,7 +386,7 @@ test("fake-runner sprint stops after corrected plan publication and cleans runti
 	const { root, internal } = await project();
 	const runner = new FakeRunner();
 	const engine = new SprintPlannerEngine(runner);
-	const state = await engine.runSprint({ projectRoot: root, internalDevPath: internal, runId: "delivery", directive: "Deliver the feature", agents: 4 });
+	const state = await engine.runSprint({ projectRoot: root, internalDevPath: internal, runId: "delivery", directive: "Deliver the feature" });
 	assert.equal(state.status, "completed");
 	const run = path.join(internal, "sprints", "delivery");
 	assert.equal(await entryExists(path.join(run, ".state.json")), false);
@@ -387,15 +401,26 @@ test("fake-runner sprint stops after corrected plan publication and cleans runti
 	assert.equal(phaseReviews.every((request) => request.model.thinking === engine.agentConfiguration.phaseReviewer.model.thinking && request.contextPaths.length === 3), true);
 	assert.equal(runner.requests.some((request) => request.role.includes("advanced-plan reviewer")), false);
 	assert.match(await readFile(path.join(run, "reviews", "advanced-plan-review.md"), "utf8"), /phase-01-first/);
-	for (let index = 1; index <= 4; index++) {
-		assert.equal(await entryExists(path.join(run, "brainstorm", `lens-${index}`, "findings.md")), true);
-		assert.equal(await entryExists(path.join(run, "brainstorm", `lens-${index}`, "cross-review.md")), true);
-		const cross = runner.requests.find((request) => request.id.endsWith(`brainstorm-cross-lens-${index}`))!;
-		assert.equal(cross.contextPaths.length, 3);
-		assert.equal(cross.sessionPath, runner.requests.find((request) => request.id.endsWith(`brainstorm-findings-lens-${index}`))!.sessionPath);
+	for (let index = 1; index <= 3; index++) {
+		assert.equal(await entryExists(path.join(run, "brainstorm", `lens-${index}`, "worker-1.md")), true);
+		assert.equal(await entryExists(path.join(run, "brainstorm", `lens-${index}`, "worker-2.md")), true);
+		const worker1 = runner.requests.find((request) => request.id.endsWith(`brainstorm-findings-lens-${index}-w1`))!;
+		const worker2 = runner.requests.find((request) => request.id.endsWith(`brainstorm-findings-lens-${index}-w2`))!;
+		assert.deepEqual(worker1.model, engine.agentConfiguration.brainstormWorker1.model);
+		assert.deepEqual(worker2.model, engine.agentConfiguration.brainstormWorker2.model);
+		assert.match(worker1.prompt, /worker 1 of 2/);
+		assert.match(worker2.prompt, /worker 2 of 2/);
 	}
 	const redTeam = runner.requests.find((request) => request.role === "brainstorm red team")!;
-	assert.deepEqual(redTeam.contextPaths, ["brainstorm/synthesis.md"]);
+	assert.deepEqual(redTeam.contextPaths, [
+		"brainstorm/lens-1/worker-1.md",
+		"brainstorm/lens-1/worker-2.md",
+		"brainstorm/lens-2/worker-1.md",
+		"brainstorm/lens-2/worker-2.md",
+		"brainstorm/lens-3/worker-1.md",
+		"brainstorm/lens-3/worker-2.md",
+		"brainstorm/synthesis.md",
+	]);
 	assert.doesNotMatch(redTeam.prompt, /supplementary-raw-reports/);
 	assert.equal(runner.requests.every((request) => request.mode === "planning"), true);
 	assert.equal(Object.keys(state.steps).some((id) => /^(orchestration-|implement-|repair-|review-|re-review-|senior-fix-|final-validation$)/.test(id)), false);
@@ -407,36 +432,39 @@ test("fake-runner sprint stops after corrected plan publication and cleans runti
 	assert.match(manifest, /concepts and orchestration/);
 });
 
-test("cross-review is an unconditional barrier before standalone synthesis", async () => {
-	assert.match(BRAINSTORM_LIFECYCLE_REQUIREMENT, /must not start until every findings\.md and cross-review\.md exists/i);
+test("both worker findings are an unconditional barrier before standalone synthesis", async () => {
+	assert.match(BRAINSTORM_LIFECYCLE_REQUIREMENT, /synthesis must not start until all six worker findings exist/i);
+	assert.match(BRAINSTORM_LIFECYCLE_REQUIREMENT, /red team then reviews every finding/i);
 	assert.match(BRAINSTORM_TOOL_GUIDELINES.join("\n"), /instead of subagent_spawn/i);
 	const { root, internal } = await project();
-	const runner = new CrossReviewFailureRunner();
+	const runner = new WorkerFindingsFailureRunner();
 	await assert.rejects(
-		new SprintPlannerEngine(runner).runStandaloneBrainstorm({ projectRoot: root, internalDevPath: internal, id: "blocked-cross-review", directive: "Explore safely", agents: 4 }),
-		/cross-review unavailable/,
+		new SprintPlannerEngine(runner).runStandaloneBrainstorm({ projectRoot: root, internalDevPath: internal, id: "blocked-findings", directive: "Explore safely" }),
+		/worker 2 findings unavailable/,
 	);
 	assert.equal(runner.requests.some((request) => request.role === "brainstorm synthesizer"), false);
-	assert.equal(await entryExists(path.join(internal, "brainstorm", "blocked-cross-review")), false);
+	assert.equal(await entryExists(path.join(internal, "brainstorm", "blocked-findings")), false);
 });
 
-test("standalone cross-review continues each original in-memory worker session", async () => {
+test("standalone findings spawn both workers per domain with distinct sessions", async () => {
 	const { root, internal } = await project();
 	const runner = new FakeRunner();
-	await new SprintPlannerEngine(runner).runStandaloneBrainstorm({ projectRoot: root, internalDevPath: internal, id: "same-session", directive: "Explore", agents: 4 });
-	for (let index = 1; index <= 4; index++) {
-		const finding = runner.requests.find((request) => request.id.endsWith(`findings-lens-${index}`))!;
-		const cross = runner.requests.find((request) => request.id.endsWith(`cross-lens-${index}`))!;
-		assert.equal(cross.sessionPath, finding.sessionPath);
-		assert.equal(cross.contextPaths.length, 3);
-		assert.doesNotMatch(cross.prompt, new RegExp(`lens-${index}/findings\\.md`));
+	await new SprintPlannerEngine(runner).runStandaloneBrainstorm({ projectRoot: root, internalDevPath: internal, id: "dual-workers", directive: "Explore" });
+	for (let index = 1; index <= 3; index++) {
+		const worker1 = runner.requests.find((request) => request.id.endsWith(`findings-lens-${index}-w1`))!;
+		const worker2 = runner.requests.find((request) => request.id.endsWith(`findings-lens-${index}-w2`))!;
+		assert.ok(worker1, `worker 1 request for lens-${index}`);
+		assert.ok(worker2, `worker 2 request for lens-${index}`);
+		assert.notEqual(worker1.sessionPath, worker2.sessionPath, `workers of lens-${index} must not share a session`);
+		assert.match(worker1.prompt, /worker 1 of 2/);
+		assert.match(worker2.prompt, /worker 2 of 2/);
 	}
 });
 
 test("malformed typed output retries twice within the same checkpointed session", async () => {
 	const { root, internal } = await project();
 	const runner = new TwiceMalformedRunner();
-	const state = await new SprintPlannerEngine(runner).runSprint({ projectRoot: root, internalDevPath: internal, runId: "retry", directive: "Retry", agents: 4 });
+	const state = await new SprintPlannerEngine(runner).runSprint({ projectRoot: root, internalDevPath: internal, runId: "retry", directive: "Retry" });
 	assert.equal(state.status, "completed");
 	const routeRequests = runner.requests.filter((request) => request.role.includes("role router"));
 	assert.equal(routeRequests.length, 3);
@@ -447,7 +475,7 @@ test("pause checkpoints interrupted work and explicit resume restarts it", async
 	const { root, internal } = await project();
 	const delayed = new DelayedRunner();
 	const firstEngine = new SprintPlannerEngine(delayed);
-	const firstRun = firstEngine.runSprint({ projectRoot: root, internalDevPath: internal, runId: "paused", directive: "Pause me", agents: 4 });
+	const firstRun = firstEngine.runSprint({ projectRoot: root, internalDevPath: internal, runId: "paused", directive: "Pause me" });
 	await delayed.waiting;
 	await firstEngine.pause(true);
 	const paused = await firstRun;
@@ -464,7 +492,7 @@ test("resume refuses a changed original directive", async () => {
 	const { root, internal } = await project();
 	const delayed = new DelayedRunner();
 	const engine = new SprintPlannerEngine(delayed);
-	const run = engine.runSprint({ projectRoot: root, internalDevPath: internal, runId: "changed-input", directive: "Original", agents: 4 });
+	const run = engine.runSprint({ projectRoot: root, internalDevPath: internal, runId: "changed-input", directive: "Original" });
 	await delayed.waiting;
 	await engine.pause(true);
 	await run;
@@ -477,7 +505,7 @@ test("cancelled standalone work publishes no directory and creates no state", as
 	const { root, internal } = await project();
 	const runner = new DelayedRunner();
 	const engine = new SprintPlannerEngine(runner);
-	const run = engine.runStandaloneBrainstorm({ projectRoot: root, internalDevPath: internal, id: "cancelled", directive: "Stop", agents: 4 });
+	const run = engine.runStandaloneBrainstorm({ projectRoot: root, internalDevPath: internal, id: "cancelled", directive: "Stop" });
 	await runner.waiting;
 	await engine.cancel();
 	await assert.rejects(run, /cancel/i);
@@ -487,8 +515,8 @@ test("cancelled standalone work publishes no directory and creates no state", as
 
 test("standalone planning workflows publish their contracted outputs without runtime state", async () => {
 	const { root, internal } = await project();
-	const brainstorm = await new SprintPlannerEngine(new FakeRunner()).runStandaloneBrainstorm({ projectRoot: root, internalDevPath: internal, id: "ideas", directive: "Explore", agents: 4 });
-	assert.deepEqual((await readdir(brainstorm)).sort(), ["lens-1", "lens-2", "lens-3", "lens-4", "red-team.md", "synthesis.md"]);
+	const brainstorm = await new SprintPlannerEngine(new FakeRunner()).runStandaloneBrainstorm({ projectRoot: root, internalDevPath: internal, id: "ideas", directive: "Explore" });
+	assert.deepEqual((await readdir(brainstorm)).sort(), ["lens-1", "lens-2", "lens-3", "red-team.md", "synthesis.md"]);
 	const handoff = await new SprintPlannerEngine(new FakeRunner()).runStandaloneIronout({ projectRoot: root, internalDevPath: internal, id: "handoff", directive: "Settle", interactive: false });
 	assert.match(await readFile(handoff, "utf8"), /## Sign-off/);
 	const plan = await new SprintPlannerEngine(new FakeRunner()).runStandaloneAdvancePlan({ projectRoot: root, internalDevPath: internal, id: "plan", directive: "Plan" });
@@ -1004,7 +1032,7 @@ test("validatePlanDirectory rejects a symbolic-link directory root", async (t) =
 test("orchestration reviewer receives handoff, corrected concepts, orchestration, and phase index", async () => {
 	const { root, internal } = await project();
 	const runner = new FakeRunner();
-	await new SprintPlannerEngine(runner).runSprint({ projectRoot: root, internalDevPath: internal, runId: "orch-context", directive: "Verify context", agents: 4 });
+	await new SprintPlannerEngine(runner).runSprint({ projectRoot: root, internalDevPath: internal, runId: "orch-context", directive: "Verify context" });
 	const orchReq = runner.requests.find((request) => request.role === "advanced orchestration reviewer")!;
 	assert.equal(orchReq.contextPaths.length, 3);
 	assert.match(orchReq.contextPaths.join(" "), /handoff/);
@@ -1017,7 +1045,7 @@ test("orchestration reviewer receives handoff, corrected concepts, orchestration
 test("phase reviewer receives corrected concepts, corrected orchestration, and its own phase", async () => {
 	const { root, internal } = await project();
 	const runner = new FakeRunner();
-	await new SprintPlannerEngine(runner).runSprint({ projectRoot: root, internalDevPath: internal, runId: "phase-ctx", directive: "Phase context", agents: 4 });
+	await new SprintPlannerEngine(runner).runSprint({ projectRoot: root, internalDevPath: internal, runId: "phase-ctx", directive: "Phase context" });
 	const phaseReqs = runner.requests.filter((request) => request.role.startsWith("advanced phase reviewer:"));
 	assert.equal(phaseReqs.length, 2);
 	for (const req of phaseReqs) {
@@ -1032,7 +1060,7 @@ test("phase reviewer receives corrected concepts, corrected orchestration, and i
 test("planning review summary includes orchestration component review", async () => {
 	const { root, internal } = await project();
 	const runner = new FakeRunner();
-	const state = await new SprintPlannerEngine(runner).runSprint({ projectRoot: root, internalDevPath: internal, runId: "summary", directive: "Summary check", agents: 4 });
+	const state = await new SprintPlannerEngine(runner).runSprint({ projectRoot: root, internalDevPath: internal, runId: "summary", directive: "Summary check" });
 	assert.equal(state.status, "completed");
 	const summary = await readFile(path.join(internal, "sprints", "summary", "reviews", "advanced-plan-review.md"), "utf8");
 	assert.match(summary, /orchestration\.md/);
@@ -1057,7 +1085,7 @@ test("state version 3 rejects an older incomplete checkpoint on load and resume"
 	const { root, internal } = await project();
 	const delayed = new DelayedRunner();
 	const engine = new SprintPlannerEngine(delayed);
-	const running = engine.runSprint({ projectRoot: root, internalDevPath: internal, runId: "old-state", directive: "Reject old state", agents: 4 });
+	const running = engine.runSprint({ projectRoot: root, internalDevPath: internal, runId: "old-state", directive: "Reject old state" });
 	await delayed.waiting;
 	await engine.pause(true);
 	await running;
@@ -1078,7 +1106,6 @@ test("plan and handoff prompts provide instruction-only time-estimate guidance",
 		advancedPhaseReviewPrompt,
 		advancedPlanPrompt,
 		brainstormPrompt,
-		crossReviewPrompt,
 		ironoutPrompt,
 		ironoutReviewPrompt,
 		redTeamPrompt,
@@ -1122,6 +1149,7 @@ test("plan and handoff prompts provide instruction-only time-estimate guidance",
 	const orchReview = advancedOrchestrationReviewPrompt("Handoff", { path: "concepts.md", content: "x" }, { path: "orchestration.md", content: "x" }, ["phase-01-a.md"], { provider: "deepseek", model: "deepseek-v4-flash", thinking: "max" }, { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" }, { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "xhigh" });
 	assert.match(orchReview, /may not add, remove, split, or merge phases/);
 	assert.match(orchReview, /deepseek\/deepseek-v4-pro:max/);
+	assert.match(orchReview, /openai-codex\/gpt-5\.6-luna:xhigh/);
 	assert.match(orchReview, /exactly one basic-or-advanced assignment exists for every phase/);
 	assert.match(orchReview, /PASS gate/);
 	assert.match(orchReview, /one agent session.*200,000–300,000 tokens/i);
@@ -1153,19 +1181,29 @@ test("plan and handoff prompts provide instruction-only time-estimate guidance",
 		assert.match(prompt, /speculative, adjacent, optional, or otherwise unrequested features/i);
 	}
 
-	const brainstorm = brainstormPrompt("Prompt", { id: "feature-complete", name: "Feature completeness", lens: "Completeness" });
-	const crossReview = crossReviewPrompt({ id: "feature-complete", name: "Feature completeness", lens: "Completeness" }, [{ path: "other.md", content: "## Prompt\n\nx" }]);
+	const brainstorm = brainstormPrompt("Prompt", { id: "feature-complete", name: "Feature completeness", lens: "Completeness" }, 1);
+	const brainstorm2 = brainstormPrompt("Prompt", { id: "feature-complete", name: "Feature completeness", lens: "Completeness" }, 2);
 	const synthesis = synthesisPrompt("Prompt", [{ path: "a.md", content: "## Prompt\n\nx" }]);
-	const redTeam = redTeamPrompt("Synthesis");
-	for (const prompt of [brainstorm, crossReview, synthesis, redTeam]) {
+	const redTeam = redTeamPrompt("Synthesis", [{ path: "a.md", content: "## Prompt\n\nx" }]);
+	for (const prompt of [brainstorm, brainstorm2, synthesis, redTeam]) {
 		assert.match(prompt, /feature completeness|feature-complete|production quality|production-quality/i);
 		assert.match(prompt, /mocks, stubs, placeholders, deferred work, partial implementations/i);
 		assert.match(prompt, /speculative, adjacent, optional, or otherwise unrequested/i);
 	}
-	for (const prompt of [brainstorm, crossReview, synthesis]) {
+	for (const prompt of [brainstorm, brainstorm2, synthesis]) {
 		assert.match(prompt, /implementation approaches/i);
 		assert.match(prompt, /must not balloon or expand scope/i);
 	}
+	// The two workers explore the same domain independently and identifiably.
+	assert.match(brainstorm, /worker 1 of 2/);
+	assert.match(brainstorm2, /worker 2 of 2/);
+	assert.match(brainstorm, /separate findings report/);
+	// Synthesis records worker disagreements; the red team resolves them over all findings.
+	assert.match(synthesis, /note where the workers differ in opinion/i);
+	assert.match(redTeam, /raw worker finding/i);
+	assert.match(redTeam, /pick the best path/i);
+	assert.match(redTeam, /over-abstraction|over abstraction/i);
+	assert.match(redTeam, /state it and solve it/);
 
 	const guidedPrompts = [
 		ironoutPrompt("Input", [], false),
@@ -1300,7 +1338,7 @@ test("malformed orchestration correction is caught before phase reviews are call
 	const { root, internal } = await project();
 	const runner = new BadOrchestrationRunner();
 	const engine = new SprintPlannerEngine(runner);
-	const state = await engine.runSprint({ projectRoot: root, internalDevPath: internal, runId: "bad-orch", directive: "Bad orchestration", agents: 4 });
+	const state = await engine.runSprint({ projectRoot: root, internalDevPath: internal, runId: "bad-orch", directive: "Bad orchestration" });
 	assert.equal(state.status, "paused");
 	assert.match(state.error ?? "", /requires 6–10 phases/);
 	// Verify no phase reviewers were called
@@ -1344,7 +1382,7 @@ class FirstBadThenGoodOrchRunner extends FakeRunner {
 test("orchestration semantic failure inside consume is retryable and succeeds on valid retry", async () => {
 	const { root, internal } = await project();
 	const runner = new FirstBadThenGoodOrchRunner();
-	const state = await new SprintPlannerEngine(runner).runSprint({ projectRoot: root, internalDevPath: internal, runId: "orch-retry", directive: "Orch retry", agents: 4 });
+	const state = await new SprintPlannerEngine(runner).runSprint({ projectRoot: root, internalDevPath: internal, runId: "orch-retry", directive: "Orch retry" });
 	assert.equal(state.status, "completed");
 	// Two orchestration review attempts: one failed (retried), one succeeded
 	const orchReqs = runner.requests.filter((r) => r.role === "advanced orchestration reviewer");
@@ -1413,7 +1451,7 @@ class PaddedPathRunner extends FakeRunner {
 test("engine canonicalizes padded submitted paths so planNames and lookups never TypeError", async () => {
 	const { root, internal } = await project();
 	const runner = new PaddedPathRunner();
-	const state = await new SprintPlannerEngine(runner).runSprint({ projectRoot: root, internalDevPath: internal, runId: "padded", directive: "Padded paths", agents: 4 });
+	const state = await new SprintPlannerEngine(runner).runSprint({ projectRoot: root, internalDevPath: internal, runId: "padded", directive: "Padded paths" });
 	assert.equal(state.status, "completed");
 	const plan = await Promise.all((await readdir(path.join(internal, "sprints", "padded", "planning"))).map(async (name) => ({ name, content: await readFile(path.join(internal, "sprints", "padded", "planning", name), "utf8") })));
 	assert.equal(plan.find((f) => f.name === "concepts.md")?.content, concepts);
@@ -1456,7 +1494,7 @@ test("resume after poisoned orchestration re-runs the failed step", async () => 
 	const runner = new BadOrchestrationRunner();
 	const engine = new SprintPlannerEngine(runner);
 	// First run — fails at orchestration review, state paused
-	const paused = await engine.runSprint({ projectRoot: root, internalDevPath: internal, runId: "poison-resume", directive: "Poison resume", agents: 4 });
+	const paused = await engine.runSprint({ projectRoot: root, internalDevPath: internal, runId: "poison-resume", directive: "Poison resume" });
 	assert.equal(paused.status, "paused");
 	// Verify the orchestration step is marked failed (after max attempts)
 	const statePath = path.join(internal, "sprints", "poison-resume");
@@ -1491,12 +1529,12 @@ test("orchestration semantics enforce complete ledgers, dependencies, waves, tup
 	assert.throws(() => validateOrchestration(orchestrationSmall.replace(/^- phase-02-second\.md \|.*\n/m, ""), phases), /cover every phase/);
 	assert.throws(() => validateOrchestration(orchestrationSmall.replace("depends: phase-01-first.md", "depends: phase-99-missing.md"), phases), /not a plan phase/);
 	assert.throws(() => validateOrchestration(orchestrationSmall.replace("- wave-01: phase-01-first.md\n- wave-02: phase-02-second.md", "- wave-01: phase-02-second.md\n- wave-02: phase-01-first.md"), phases), /earlier wave/);
-	assert.doesNotThrow(() => validateOrchestration(orchestrationSmall.replace("deepseek/deepseek-v4-pro:max", "deepseek/deepseek-v4-pro:high"), phases));
+	assert.doesNotThrow(() => validateOrchestration(orchestrationSmall.replace("- Advanced Implementer: openai-codex/gpt-5.6-luna:max", "- Advanced Implementer: openai-codex/gpt-5.6-sol:max"), phases));
 	assert.throws(() => validateOrchestration(orchestrationSmall.replace("exactly one assigned implementation agent per unsplit phase, or one sequential assigned agent per lettered subphase for split phases", "two implementation agents per phase"), phases), /Model Assignments.*exact structured/);
 	assert.throws(() => validateOrchestration(orchestrationSmall.replace("- phase-02-second.md: basic\n", ""), phases), /assign.*phase|Model Assignments/i);
 	assert.throws(() => validateOrchestration(orchestrationSmall.replace("- phase-02-second.md: basic", "- phase-02-second.md: routine"), phases), /assign.*phase|Model Assignments/i);
-	assert.throws(() => validateOrchestration(orchestrationSmall.replace("- Basic Implementer: deepseek/deepseek-v4-flash:max", "- Basic Implementer: deepseek/deepseek-v4-pro:max"), phases), /must be distinct/);
-	assert.throws(() => validateOrchestration(orchestrationSmall.replace("deepseek/deepseek-v4-flash:max", "deepseek/deepseek-v4-flash:high"), phases, {
+	assert.throws(() => validateOrchestration(orchestrationSmall.replace("- Basic Implementer: openai-codex/gpt-5.6-luna:high", "- Basic Implementer: openai-codex/gpt-5.6-luna:max"), phases), /must be distinct/);
+	assert.throws(() => validateOrchestration(orchestrationSmall.replace("- Basic Implementer: openai-codex/gpt-5.6-luna:high", "- Basic Implementer: openai-codex/gpt-5.6-luna:xhigh"), phases, {
 		basicImplementationModel: SPRINT_PLANNER_AGENT_CONFIGURATIONS.default.basicImplementer.model,
 		advancedImplementationModel: SPRINT_PLANNER_AGENT_CONFIGURATIONS.default.advancedImplementer.model,
 		validationModel: SPRINT_PLANNER_AGENT_CONFIGURATIONS.default.phaseValidator.model,
@@ -1553,7 +1591,7 @@ class FirstSemanticMalformedRunner extends FakeRunner {
 test("persistent semantic validators retry malformed handoffs, plan drafts, concepts, orchestration, and early and late phases", async () => {
 	const { root, internal } = await project();
 	const runner = new FirstSemanticMalformedRunner();
-	const state = await new SprintPlannerEngine(runner).runSprint({ projectRoot: root, internalDevPath: internal, runId: "semantic-retries", directive: "Retry every semantic boundary", agents: 4 });
+	const state = await new SprintPlannerEngine(runner).runSprint({ projectRoot: root, internalDevPath: internal, runId: "semantic-retries", directive: "Retry every semantic boundary" });
 	assert.equal(state.status, "completed", state.error);
 	// Roles that have heading validation (retry on malformation)
 	for (const role of ["autonomous ironout author", "corrective ironout reviewer", "advanced concepts reviewer", "advanced orchestration reviewer", "advanced phase reviewer: phase-01-first.md", "advanced phase reviewer: phase-02-second.md"]) {
@@ -1607,7 +1645,7 @@ async function semanticallyPoisonCheckpoint(runDirectory: string, stepId: string
 test("resume invalidates hash-valid but semantically poisoned completed concepts, orchestration, and non-final phase checkpoints", async () => {
 	{
 		const { root, internal } = await project();
-		const paused = await new SprintPlannerEngine(new FatalPlanningRoleRunner("advanced orchestration reviewer")).runSprint({ projectRoot: root, internalDevPath: internal, runId: "poison-concepts", directive: "Poison concepts", agents: 4 });
+		const paused = await new SprintPlannerEngine(new FatalPlanningRoleRunner("advanced orchestration reviewer")).runSprint({ projectRoot: root, internalDevPath: internal, runId: "poison-concepts", directive: "Poison concepts" });
 		assert.equal(paused.status, "paused");
 		const runDirectory = path.join(internal, "sprints", "poison-concepts");
 		await semanticallyPoisonCheckpoint(runDirectory, "planning-review-concepts", "planning-review-draft/concepts.md", concepts.replace("## Architecture", "## Design"));
@@ -1618,7 +1656,7 @@ test("resume invalidates hash-valid but semantically poisoned completed concepts
 	}
 	{
 		const { root, internal } = await project();
-		const paused = await new SprintPlannerEngine(new FatalPlanningRoleRunner("advanced phase reviewer: phase-01-first.md")).runSprint({ projectRoot: root, internalDevPath: internal, runId: "poison-orchestration", directive: "Poison orchestration", agents: 4 });
+		const paused = await new SprintPlannerEngine(new FatalPlanningRoleRunner("advanced phase reviewer: phase-01-first.md")).runSprint({ projectRoot: root, internalDevPath: internal, runId: "poison-orchestration", directive: "Poison orchestration" });
 		assert.equal(paused.status, "paused");
 		const runDirectory = path.join(internal, "sprints", "poison-orchestration");
 		await semanticallyPoisonCheckpoint(runDirectory, "planning-review-orchestration", "planning-review-draft/orchestration.md", orchestrationSmall.replace("review-and-repair must PASS", "review only"));
@@ -1630,7 +1668,7 @@ test("resume invalidates hash-valid but semantically poisoned completed concepts
 	}
 	{
 		const { root, internal } = await project();
-		const paused = await new SprintPlannerEngine(new FatalPlanningRoleRunner("advanced phase reviewer: phase-02-second.md")).runSprint({ projectRoot: root, internalDevPath: internal, runId: "poison-phase", directive: "Poison phase", agents: 4 });
+		const paused = await new SprintPlannerEngine(new FatalPlanningRoleRunner("advanced phase reviewer: phase-02-second.md")).runSprint({ projectRoot: root, internalDevPath: internal, runId: "poison-phase", directive: "Poison phase" });
 		assert.equal(paused.status, "paused");
 		const runDirectory = path.join(internal, "sprints", "poison-phase");
 		await semanticallyPoisonCheckpoint(runDirectory, "planning-review-phase-01-first", "planning-review-draft/phase-01-first.md", phase1.replace("## Exit Criteria", "## Completion Criteria"));
@@ -1789,7 +1827,7 @@ test("full-sprint post-publication bookkeeping failure rolls back owned outputs 
 			}
 		},
 	});
-	const paused = await engine.runSprint({ projectRoot: root, internalDevPath: internal, runId: "post-publish-rollback", directive: "Publish safely", agents: 4 });
+	const paused = await engine.runSprint({ projectRoot: root, internalDevPath: internal, runId: "post-publish-rollback", directive: "Publish safely" });
 	assert.equal(paused.status, "paused");
 	const runDirectory = path.join(internal, "sprints", "post-publish-rollback");
 	assert.equal(await entryExists(path.join(runDirectory, "planning")), false);
@@ -1823,7 +1861,7 @@ class FullPlanningCollisionRunner extends FakeRunner {
 test("full-sprint publication collision creates no summary or manifest and resumes after the foreign reservation is removed", async () => {
 	const { root, internal } = await project();
 	const runDirectory = path.join(internal, "sprints", "full-collision");
-	const paused = await new SprintPlannerEngine(new FullPlanningCollisionRunner(path.join(runDirectory, "planning"))).runSprint({ projectRoot: root, internalDevPath: internal, runId: "full-collision", directive: "Collision", agents: 4 });
+	const paused = await new SprintPlannerEngine(new FullPlanningCollisionRunner(path.join(runDirectory, "planning"))).runSprint({ projectRoot: root, internalDevPath: internal, runId: "full-collision", directive: "Collision" });
 	assert.equal(paused.status, "paused");
 	assert.deepEqual(await readdir(path.join(runDirectory, "planning")), []);
 	assert.equal(await entryExists(path.join(runDirectory, "reviews", "advanced-plan-review.md")), false);
@@ -1859,19 +1897,13 @@ test("-- option terminator preserves literal prompt text including option-like t
 	assert.equal(parsed2.input, "--name literal");
 	assert.equal(parsed2.name, undefined);
 
-	// --agents before -- is still parsed as option
-	const parsed3 = parseCommand("sprint", "--agents 3 -- --name skip");
-	assert.equal(parsed3.agents, 3);
-	assert.equal(parsed3.input, "--name skip");
-
-	// Terminal -- with no following text produces no prompt
-	const parsed4 = parseCommand("sprint", "--agents 2 --");
-	assert.equal(parsed4.input, undefined);
+	// Unknown options are rejected before any prompt is consumed
+	assert.throws(() => parseCommand("sprint", "--agents 3 -- --name skip"), /Unknown option: --agents/);
+	assert.throws(() => parseCommand("sprint", "--agents 2 --"), /Unknown option: --agents/);
 
 	// Quotes and option-like text preserved literally after --
 	const parsed5 = parseCommand("brainstorm", "-- \"quoted\" --agents 5");
 	assert.equal(parsed5.input, "\"quoted\" --agents 5");
-	assert.equal(parsed5.agents, DEFAULT_BRAINSTORM_AGENTS); // not parsed
 	assert.equal(parseCommand("sprint", "-- \"unterminated").input, "\"unterminated");
 	assert.equal(parseCommand("sprint", "plain prompt  \n").input, "plain prompt  \n");
 });
@@ -1889,33 +1921,33 @@ test("session ids are stable and distinct for same-prefix different-tail inputs"
 	assert.match(a, /^[A-Za-z0-9][A-Za-z0-9._-]*-[0-9a-f]{16}$/);
 });
 
-test("synthesis coverage requires exact findings-plus-cross-review Source set", () => {
+test("synthesis coverage requires the exact worker-findings Source set", () => {
 	const synth = markdown("Synthesis", BRAINSTORM_HEADINGS);
 	// Missing a path
-	const content1 = synth.replace("Source content.", "- lens-1/findings.md\n- lens-1/cross-review.md");
+	const content1 = synth.replace("Source content.", "- lens-1/worker-1.md\n- lens-1/worker-2.md");
 	assert.throws(
-		() => validateSynthesisCoverage(content1, ["lens-1/findings.md", "lens-1/cross-review.md", "lens-2/findings.md", "lens-2/cross-review.md"]),
+		() => validateSynthesisCoverage(content1, ["lens-1/worker-1.md", "lens-1/worker-2.md", "lens-2/worker-1.md", "lens-2/worker-2.md"]),
 		/missing report path/,
 	);
 	// Unknown extra path
-	const content2 = synth.replace("Source content.", "- lens-1/findings.md\n- lens-1/cross-review.md\n- lens-3/findings.md");
+	const content2 = synth.replace("Source content.", "- lens-1/worker-1.md\n- lens-1/worker-2.md\n- lens-3/worker-1.md");
 	assert.throws(
-		() => validateSynthesisCoverage(content2, ["lens-1/findings.md", "lens-1/cross-review.md"]),
+		() => validateSynthesisCoverage(content2, ["lens-1/worker-1.md", "lens-1/worker-2.md"]),
 		/unknown report path/,
 	);
 	// Duplicate path
-	const content3 = synth.replace("Source content.", "- lens-1/findings.md\n- lens-1/findings.md");
+	const content3 = synth.replace("Source content.", "- lens-1/worker-1.md\n- lens-1/worker-1.md");
 	assert.throws(
-		() => validateSynthesisCoverage(content3, ["lens-1/findings.md"]),
+		() => validateSynthesisCoverage(content3, ["lens-1/worker-1.md"]),
 		/lists the same path more than once/,
 	);
 	// Code-fenced paths do not count, and prose is not a literal path item.
-	const fenced = synth.replace("Source content.", "```text\n- lens-1/findings.md\n```");
-	assert.throws(() => validateSynthesisCoverage(fenced, ["lens-1/findings.md"]), /missing report path/);
-	const prose = synth.replace("Source content.", "Reports considered:\n- lens-1/findings.md");
-	assert.throws(() => validateSynthesisCoverage(prose, ["lens-1/findings.md"]), /non-literal/);
-	const content4 = synth.replace("Source content.", "- lens-1/findings.md\n- lens-1/cross-review.md");
-	assert.doesNotThrow(() => validateSynthesisCoverage(content4, ["lens-1/findings.md", "lens-1/cross-review.md"]));
+	const fenced = synth.replace("Source content.", "```text\n- lens-1/worker-1.md\n```");
+	assert.throws(() => validateSynthesisCoverage(fenced, ["lens-1/worker-1.md"]), /missing report path/);
+	const prose = synth.replace("Source content.", "Reports considered:\n- lens-1/worker-1.md");
+	assert.throws(() => validateSynthesisCoverage(prose, ["lens-1/worker-1.md"]), /non-literal/);
+	const content4 = synth.replace("Source content.", "- lens-1/worker-1.md\n- lens-1/worker-2.md");
+	assert.doesNotThrow(() => validateSynthesisCoverage(content4, ["lens-1/worker-1.md", "lens-1/worker-2.md"]));
 });
 
 test("structured inspector returns versioned results with categorized findings", async () => {
@@ -2063,7 +2095,7 @@ test("decomposition gate receives complete draft and can adjust the phase set", 
 		}
 	}
 	const runner = new DecompositionRenameRunner();
-	const state = await new SprintPlannerEngine(runner).runSprint({ projectRoot: root, internalDevPath: internal, runId: "decomp-rename", directive: "Rename test", agents: 4 });
+	const state = await new SprintPlannerEngine(runner).runSprint({ projectRoot: root, internalDevPath: internal, runId: "decomp-rename", directive: "Rename test" });
 	assert.equal(state.status, "completed", state.error);
 	// Verify the published plan uses the renamed phase
 	const planDir = path.join(internal, "sprints", "decomp-rename", "planning");
@@ -2090,7 +2122,7 @@ test("engine progress is observable as starting before async initialization", as
 	const progressSnapshots: EngineProgress[] = [];
 	const origProgress = Object.getOwnPropertyDescriptor(SprintPlannerEngine.prototype, "progress")!.get!;
 
-	const promise = engine.runSprint({ projectRoot: root, internalDevPath: internal, runId: "starting-test", directive: "Starting test", agents: 4 });
+	const promise = engine.runSprint({ projectRoot: root, internalDevPath: internal, runId: "starting-test", directive: "Starting test" });
 
 	// Progress should be observable immediately — 'starting' before first delay
 	const early = engine.progress;
@@ -2257,9 +2289,8 @@ test("parseCommand -- works correctly with start workflows", () => {
 	assert.equal(p2.input, "the prompt");
 
 	// Only -- with nothing after
-	const p3 = parseCommand("sprint", "--agents 2 --");
+	const p3 = parseCommand("sprint", "--");
 	assert.equal(p3.input, undefined);
-	assert.equal(p3.agents, 2);
 });
 
 test("validatePlanDirectory hardened inspection rejects missing root", async () => {
@@ -2302,12 +2333,12 @@ test("completed disposition charges an attempt; interrupted disposition does not
 					return { ok: false, error: "transient failure", failureKind: "transient", sessionPath: request.sessionPath, disposition: "completed" };
 				}
 				// Second call: success
-				return { ok: true, submission: { kind: "roles", content: JSON.stringify({ roles: Array.from({ length: 4 }, (_, index) => ({ id: `lens-${index + 1}`, name: `Lens ${index + 1}`, lens: `Lens ${index + 1}` })) }) }, sessionPath: request.sessionPath, disposition: "completed" };
+				return { ok: true, submission: { kind: "roles", content: JSON.stringify({ roles: Array.from({ length: 3 }, (_, index) => ({ id: `lens-${index + 1}`, name: `Lens ${index + 1}`, lens: `Lens ${index + 1}` })) }) }, sessionPath: request.sessionPath, disposition: "completed" };
 			}
 			return super.run(request, signal);
 		}
 	}
-	const state = await new SprintPlannerEngine(new DispositionRunner()).runSprint({ projectRoot: root, internalDevPath: internal, runId: "disposition", directive: "Disposition test", agents: 4 });
+	const state = await new SprintPlannerEngine(new DispositionRunner()).runSprint({ projectRoot: root, internalDevPath: internal, runId: "disposition", directive: "Disposition test" });
 	assert.equal(state.status, "completed");
 	// The route step should have 2 charged attempts (both completed dispositions).
 	const routeStep = state.steps["brainstorm-route"];
@@ -2326,13 +2357,13 @@ test("provider failure is charged and carries provider retry category", async ()
 				if (roleCalls === 1) {
 					return { ok: false, error: "rate limit exceeded", failureKind: "transient", sessionPath: request.sessionPath, disposition: "completed" };
 				}
-				return { ok: true, submission: { kind: "roles", content: JSON.stringify({ roles: Array.from({ length: 4 }, (_, index) => ({ id: `lens-${index + 1}`, name: `Lens ${index + 1}`, lens: `Lens ${index + 1}` })) }) }, sessionPath: request.sessionPath, disposition: "completed" };
+				return { ok: true, submission: { kind: "roles", content: JSON.stringify({ roles: Array.from({ length: 3 }, (_, index) => ({ id: `lens-${index + 1}`, name: `Lens ${index + 1}`, lens: `Lens ${index + 1}` })) }) }, sessionPath: request.sessionPath, disposition: "completed" };
 			}
 			return super.run(request, signal);
 		}
 	}
 	const runner = new ProviderFailureRunner();
-	const state = await new SprintPlannerEngine(runner).runSprint({ projectRoot: root, internalDevPath: internal, runId: "prov-fail", directive: "Provider fail", agents: 4 });
+	const state = await new SprintPlannerEngine(runner).runSprint({ projectRoot: root, internalDevPath: internal, runId: "prov-fail", directive: "Provider fail" });
 	assert.equal(state.status, "completed");
 	const retryReq = runner.requests.find((r) => r.role.includes("role router") && r.retryPrompt);
 	assert.ok(retryReq, "second attempt should have a retry prompt");
@@ -2352,13 +2383,13 @@ test("typed submission failure is charged and carries typed retry category", asy
 					// Empty content triggers typed validation failure.
 					return { ok: true, submission: { kind: "roles", content: "" }, sessionPath: request.sessionPath, disposition: "completed" };
 				}
-				return { ok: true, submission: { kind: "roles", content: JSON.stringify({ roles: Array.from({ length: 4 }, (_, index) => ({ id: `lens-${index + 1}`, name: `Lens ${index + 1}`, lens: `Lens ${index + 1}` })) }) }, sessionPath: request.sessionPath, disposition: "completed" };
+				return { ok: true, submission: { kind: "roles", content: JSON.stringify({ roles: Array.from({ length: 3 }, (_, index) => ({ id: `lens-${index + 1}`, name: `Lens ${index + 1}`, lens: `Lens ${index + 1}` })) }) }, sessionPath: request.sessionPath, disposition: "completed" };
 			}
 			return super.run(request, signal);
 		}
 	}
 	const runner = new TypedFailureRunner();
-	const state = await new SprintPlannerEngine(runner).runSprint({ projectRoot: root, internalDevPath: internal, runId: "typed-fail", directive: "Typed fail", agents: 4 });
+	const state = await new SprintPlannerEngine(runner).runSprint({ projectRoot: root, internalDevPath: internal, runId: "typed-fail", directive: "Typed fail" });
 	assert.equal(state.status, "completed");
 	assert.equal(calls, 3);
 	const retryReqs = runner.requests.filter((r) => r.role.includes("role router") && r.retryPrompt);
@@ -2386,7 +2417,7 @@ test("semantic validation failure is charged and carries semantic retry category
 		}
 	}
 	const runner = new SemanticFailureRunner();
-	const state = await new SprintPlannerEngine(runner).runSprint({ projectRoot: root, internalDevPath: internal, runId: "semantic-fail", directive: "Semantic fail", agents: 4 });
+	const state = await new SprintPlannerEngine(runner).runSprint({ projectRoot: root, internalDevPath: internal, runId: "semantic-fail", directive: "Semantic fail" });
 	assert.equal(state.status, "completed");
 	assert.equal(synthCalls, 2);
 	const retryReq = runner.requests.find((r) => r.role === "brainstorm synthesizer" && r.retryPrompt);
@@ -2400,7 +2431,7 @@ test("charged attempts and last retry feedback survive ordinary resume", async (
 	const { root, internal } = await project();
 	const delayed = new DelayedRunner();
 	const engine = new SprintPlannerEngine(delayed);
-	const firstRun = engine.runSprint({ projectRoot: root, internalDevPath: internal, runId: "retry-resume", directive: "Retry resume", agents: 4 });
+	const firstRun = engine.runSprint({ projectRoot: root, internalDevPath: internal, runId: "retry-resume", directive: "Retry resume" });
 	await delayed.waiting;
 	await engine.pause(true);
 	const paused = await firstRun;
@@ -2429,7 +2460,7 @@ test("charged attempts and last retry feedback survive ordinary resume", async (
 test("Phase 01 drift path resets completed component attempts and downstream on semantic revalidation", async () => {
 	const { root, internal } = await project();
 	// Run a sprint until concepts review completes, then pause before orchestration.
-	const paused = await new SprintPlannerEngine(new FatalPlanningRoleRunner("advanced orchestration reviewer")).runSprint({ projectRoot: root, internalDevPath: internal, runId: "drift-preserve", directive: "Drift preserve", agents: 4 });
+	const paused = await new SprintPlannerEngine(new FatalPlanningRoleRunner("advanced orchestration reviewer")).runSprint({ projectRoot: root, internalDevPath: internal, runId: "drift-preserve", directive: "Drift preserve" });
 	assert.equal(paused.status, "paused");
 
 	// Poison the concepts checkpoint.
@@ -2460,15 +2491,15 @@ test("Phase 01 drift path resets completed component attempts and downstream on 
 test("full-sprint ironout prompt embeds the user directive plus synthesis and red team, excluding raw reports", async () => {
 	const { root, internal } = await project();
 	const runner = new FakeRunner();
-	await new SprintPlannerEngine(runner).runSprint({ projectRoot: root, internalDevPath: internal, runId: "ironout-ctx", directive: "Ironout context", agents: 4 });
+	await new SprintPlannerEngine(runner).runSprint({ projectRoot: root, internalDevPath: internal, runId: "ironout-ctx", directive: "Ironout context" });
 	const ironoutReq = runner.requests.find((r) => r.role === "autonomous ironout author")!;
 	assert.ok(ironoutReq);
 	// Must NOT embed raw report content.
 	assert.doesNotMatch(ironoutReq.prompt, /<supplementary-raw-reports>/);
 	// Must include retained report paths.
 	assert.match(ironoutReq.prompt, /<retained-report-paths>/);
-	assert.match(ironoutReq.prompt, /brainstorm\/lens-1\/findings\.md/);
-	assert.match(ironoutReq.prompt, /brainstorm\/lens-1\/cross-review\.md/);
+	assert.match(ironoutReq.prompt, /brainstorm\/lens-1\/worker-1\.md/);
+	assert.match(ironoutReq.prompt, /brainstorm\/lens-1\/worker-2\.md/);
 	// Must embed the original user directive as the authoritative scope contract.
 	assert.match(ironoutReq.prompt, /<user-directive>/);
 	assert.match(ironoutReq.prompt, /Ironout context/);
@@ -2496,7 +2527,7 @@ test("standalone ironout prompt does not embed raw reports when none exist", asy
 test("phase corrective reviews run using scoped fan-out after concepts and orchestration barriers", async () => {
 	const { root, internal } = await project();
 	const runner = new FakeRunner();
-	await new SprintPlannerEngine(runner).runSprint({ projectRoot: root, internalDevPath: internal, runId: "concurrent-phases", directive: "Concurrent phases", agents: 4 });
+	await new SprintPlannerEngine(runner).runSprint({ projectRoot: root, internalDevPath: internal, runId: "concurrent-phases", directive: "Concurrent phases" });
 	// Verify concepts review happened before orchestration review.
 	const conceptIdx = runner.requests.findIndex((r) => r.role === "advanced concepts reviewer");
 	const orchIdx = runner.requests.findIndex((r) => r.role === "advanced orchestration reviewer");
@@ -2530,7 +2561,7 @@ test("abortAll returns only after all tracked operations have settled", async ()
 	const { root, internal } = await project();
 	const delayed = new DelayedRunner();
 	const engine = new SprintPlannerEngine(delayed);
-	const run = engine.runSprint({ projectRoot: root, internalDevPath: internal, runId: "abort-settle", directive: "Abort settle", agents: 4 });
+	const run = engine.runSprint({ projectRoot: root, internalDevPath: internal, runId: "abort-settle", directive: "Abort settle" });
 	await delayed.waiting;
 	// Cancel should settle all operations and return a cancelled state.
 	await engine.cancel();
@@ -2544,7 +2575,7 @@ test("pause triggers abortAll and marks operations interrupted without consuming
 	const { root, internal } = await project();
 	const delayed = new DelayedRunner();
 	const engine = new SprintPlannerEngine(delayed);
-	const run = engine.runSprint({ projectRoot: root, internalDevPath: internal, runId: "pause-no-charge", directive: "Pause no charge", agents: 4 });
+	const run = engine.runSprint({ projectRoot: root, internalDevPath: internal, runId: "pause-no-charge", directive: "Pause no charge" });
 	await delayed.waiting;
 	await engine.pause(true);
 	const state = await run;
@@ -2562,7 +2593,7 @@ test("pause triggers abortAll and marks operations interrupted without consuming
 test("phase file set is frozen and published in phase order with complete component review coverage", async () => {
 	const { root, internal } = await project();
 	const runner = new FakeRunner();
-	const state = await new SprintPlannerEngine(runner).runSprint({ projectRoot: root, internalDevPath: internal, runId: "frozen-set", directive: "Frozen set", agents: 4 });
+	const state = await new SprintPlannerEngine(runner).runSprint({ projectRoot: root, internalDevPath: internal, runId: "frozen-set", directive: "Frozen set" });
 	assert.equal(state.status, "completed");
 	const planDir = path.join(internal, "sprints", "frozen-set", "planning");
 	const planFiles = (await readdir(planDir)).sort();
@@ -2588,7 +2619,7 @@ test("scoped fan-out cancels and fully settles blocking siblings without chargin
 		async run(request: WorkerRequest, signal: AbortSignal): Promise<WorkerResult> {
 			if (!request.id.includes("-brainstorm-findings-")) return super.run(request, signal);
 			this.requests.push(structuredClone(request));
-			if (request.id.endsWith("-lens-2")) {
+			if (request.id.endsWith("-brainstorm-findings-lens-2-w1")) {
 				await new Promise((resolve) => setImmediate(resolve));
 				return { ok: false, error: "primary findings failure", failureKind: "fatal", sessionPath: request.sessionPath, disposition: "completed" };
 			}
@@ -2604,16 +2635,16 @@ test("scoped fan-out cancels and fully settles blocking siblings without chargin
 		}
 	}
 	const runner = new BlockingSiblingRunner();
-	const state = await new SprintPlannerEngine(runner).runSprint({ projectRoot: root, internalDevPath: internal, runId: "fanout-settle", directive: "Fanout settle", agents: 4 });
+	const state = await new SprintPlannerEngine(runner).runSprint({ projectRoot: root, internalDevPath: internal, runId: "fanout-settle", directive: "Fanout settle" });
 	assert.equal(state.status, "paused");
 	assert.match(state.error ?? "", /primary findings failure/);
-	assert.equal(runner.requests.filter((request) => request.id.includes("-brainstorm-findings-")).length, 4, "every factory starts");
-	assert.equal(runner.cancelled, 3);
-	assert.equal(runner.settled, 3, "the fan-out returns only after every blocked sibling settles");
-	assert.equal(state.steps["brainstorm-findings-lens-2"].attempts, 1);
-	for (const lens of ["lens-1", "lens-3", "lens-4"]) {
-		assert.equal(state.steps[`brainstorm-findings-${lens}`].attempts, 0, `${lens} cancellation is not charged`);
-		assert.equal(state.steps[`brainstorm-findings-${lens}`].status, "pending");
+	assert.equal(runner.requests.filter((request) => request.id.includes("-brainstorm-findings-")).length, 6, "every factory starts");
+	assert.equal(runner.cancelled, 5);
+	assert.equal(runner.settled, 5, "the fan-out returns only after every blocked sibling settles");
+	assert.equal(state.steps["brainstorm-findings-lens-2-w1"].attempts, 1);
+	for (const stepId of ["brainstorm-findings-lens-1-w1", "brainstorm-findings-lens-1-w2", "brainstorm-findings-lens-2-w2", "brainstorm-findings-lens-3-w1", "brainstorm-findings-lens-3-w2"]) {
+		assert.equal(state.steps[stepId].attempts, 0, `${stepId} cancellation is not charged`);
+		assert.equal(state.steps[stepId].status, "pending");
 	}
 });
 
@@ -2628,7 +2659,7 @@ test("not-started runner failure is fatal and consumes no retry budget", async (
 		}
 	}
 	const runner = new SetupFailureRunner();
-	const state = await new SprintPlannerEngine(runner).runSprint({ projectRoot: root, internalDevPath: internal, runId: "preflight-fatal", directive: "Preflight fatal", agents: 4 });
+	const state = await new SprintPlannerEngine(runner).runSprint({ projectRoot: root, internalDevPath: internal, runId: "preflight-fatal", directive: "Preflight fatal" });
 	assert.equal(state.status, "paused");
 	assert.equal(runner.calls, 1);
 	assert.equal(state.steps["brainstorm-route"].attempts, 0);
@@ -2641,17 +2672,17 @@ test("scoped fan-out failure preserves the first non-cancellation error as cause
 	// A runner that makes one findings step fail with a distinct error.
 	class SingleFindingFailureRunner extends FakeRunner {
 		async run(request: WorkerRequest, signal: AbortSignal): Promise<WorkerResult> {
-			if (request.id.endsWith("-brainstorm-findings-lens-2")) {
+			if (request.id.endsWith("-brainstorm-findings-lens-2-w1")) {
 				this.requests.push(structuredClone(request));
-				return { ok: false, error: "lens-2 injected failure", failureKind: "fatal", sessionPath: request.sessionPath, disposition: "completed" };
+				return { ok: false, error: "lens-2 worker 1 injected failure", failureKind: "fatal", sessionPath: request.sessionPath, disposition: "completed" };
 			}
 			return super.run(request, signal);
 		}
 	}
-	const state = await new SprintPlannerEngine(new SingleFindingFailureRunner()).runSprint({ projectRoot: root, internalDevPath: internal, runId: "fanout-cause", directive: "Fanout cause", agents: 4 });
+	const state = await new SprintPlannerEngine(new SingleFindingFailureRunner()).runSprint({ projectRoot: root, internalDevPath: internal, runId: "fanout-cause", directive: "Fanout cause" });
 	// The sprint should pause because a findings step exhausted its retries.
 	assert.equal(state.status, "paused");
-	assert.match(state.error ?? "", /lens-2 injected failure/);
+	assert.match(state.error ?? "", /lens-2 worker 1 injected failure/);
 });
 
 // ── Phase 03: leases and run records ───────────────────────────────────
@@ -2893,7 +2924,7 @@ test("runDoctor diagnoses completed planning runs from state", async () => {
 		version: 3, runId: "doc-completed", projectRoot: "/tmp", runDirectory: runDir,
 		status: "completed", stage: "complete", directivePath: "input.md",
 		inputArtifact: { path: "input.md", sha256: "a".repeat(64), bytes: 100 },
-		agents: 4, steps: {}, createdAt: now, updatedAt: now, completedAt: now,
+		 steps: {}, createdAt: now, updatedAt: now, completedAt: now,
 	}, null, 2));
 	const root = await sprintsRoot(internal);
 	const report = await runDoctor(root, runDir, "doc-completed");
@@ -2957,7 +2988,7 @@ test("runDoctor reports runId mismatch in state", async () => {
 test("runDoctor never writes or mutates files (read-only snapshot)", async () => {
 	const { internal } = await project();
 	const runDir = await createSprintRun(internal, "doc-ro");
-	await writeFile(path.join(runDir, ".state.json"), JSON.stringify({ version: 3, status: "interrupted", runId: "doc-ro", projectRoot: "/tmp", runDirectory: runDir, directivePath: "input.md", inputArtifact: { path: "input.md", sha256: "a".repeat(64), bytes: 100 }, agents: 4, steps: {}, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, null, 2));
+	await writeFile(path.join(runDir, ".state.json"), JSON.stringify({ version: 3, status: "interrupted", runId: "doc-ro", projectRoot: "/tmp", runDirectory: runDir, directivePath: "input.md", inputArtifact: { path: "input.md", sha256: "a".repeat(64), bytes: 100 },  steps: {}, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, null, 2));
 
 	const statePath = path.join(runDir, ".state.json");
 	const beforeBytes = (await stat(statePath)).size;
@@ -2982,7 +3013,7 @@ test("runDoctor detects recorded artifact hash drift", async () => {
 	const { root: projectRoot, internal } = await project();
 	const runner = new DelayedRunner();
 	const engine = new SprintPlannerEngine(runner);
-	const run = engine.runSprint({ projectRoot, internalDevPath: internal, runId: "doc-hash-drift", directive: "Hash drift", agents: 4 });
+	const run = engine.runSprint({ projectRoot, internalDevPath: internal, runId: "doc-hash-drift", directive: "Hash drift" });
 	await runner.waiting;
 	await engine.pause();
 	await run;
@@ -3072,7 +3103,7 @@ test("sprint engine acquires and releases lease across full lifecycle", async ()
 	const { root, internal } = await project();
 	const runner = new FakeRunner();
 	const engine = new SprintPlannerEngine(runner);
-	const state = await engine.runSprint({ projectRoot: root, internalDevPath: internal, runId: "lease-lifecycle", directive: "Lease test", agents: 4 });
+	const state = await engine.runSprint({ projectRoot: root, internalDevPath: internal, runId: "lease-lifecycle", directive: "Lease test" });
 	assert.equal(state.status, "completed");
 	// After completion, lease should be released
 	const leaseFile = leasePath(path.join(internal, "sprints", "lease-lifecycle"));
@@ -3083,7 +3114,7 @@ test("sprint engine releases lease on paused/errored completion", async () => {
 	const { root, internal } = await project();
 	const runner = new BadOrchestrationRunner();
 	const engine = new SprintPlannerEngine(runner);
-	const state = await engine.runSprint({ projectRoot: root, internalDevPath: internal, runId: "lease-paused", directive: "Pause test", agents: 4 });
+	const state = await engine.runSprint({ projectRoot: root, internalDevPath: internal, runId: "lease-paused", directive: "Pause test" });
 	assert.equal(state.status, "paused");
 	// Lease should be released even after paused
 	const leaseFile = leasePath(path.join(internal, "sprints", "lease-paused"));
@@ -3094,7 +3125,7 @@ test("sprint engine release via engine.pause", async () => {
 	const { root, internal } = await project();
 	const delayed = new DelayedRunner();
 	const engine = new SprintPlannerEngine(delayed);
-	const run = engine.runSprint({ projectRoot: root, internalDevPath: internal, runId: "lease-pause", directive: "Pause lease", agents: 4 });
+	const run = engine.runSprint({ projectRoot: root, internalDevPath: internal, runId: "lease-pause", directive: "Pause lease" });
 	await delayed.waiting;
 	await engine.pause(true);
 	await run;
@@ -3127,7 +3158,7 @@ test("sprint resume refuses foreign lease", async () => {
 		version: 3, runId: "foreign-resume", projectRoot: root, runDirectory: runDir,
 		status: "interrupted", stage: "brainstorm", directivePath: "input.md",
 		inputArtifact: { path: "input.md", sha256: "a".repeat(64), bytes: 100 },
-		agents: 4, steps: {}, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+		 steps: {}, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
 	}, null, 2);
 	await writeFile(path.join(runDir, ".state.json"), stateContent);
 	await writeFile(path.join(runDir, "input.md"), "# Sprint Input\n\nTest\n");
@@ -3152,7 +3183,7 @@ test("sprint resume refuses uncertain lease", async () => {
 		version: 3, runId: "uncertain-resume", projectRoot: root, runDirectory: runDir,
 		status: "interrupted", stage: "brainstorm", directivePath: "input.md",
 		inputArtifact: { path: "input.md", sha256: "a".repeat(64), bytes: 100 },
-		agents: 4, steps: {}, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+		 steps: {}, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
 	}, null, 2);
 	await writeFile(path.join(runDir, ".state.json"), stateContent);
 	await writeFile(path.join(runDir, "input.md"), "# Sprint Input\n\nTest\n");
@@ -3214,7 +3245,7 @@ test("fake-runner sprint still preserves immediate starting progress", async () 
 	const { root, internal } = await project();
 	const delayed = new DelayedRunner();
 	const engine = new SprintPlannerEngine(delayed);
-	const promise = engine.runSprint({ projectRoot: root, internalDevPath: internal, runId: "starting-03", directive: "Starting phase 03", agents: 4 });
+	const promise = engine.runSprint({ projectRoot: root, internalDevPath: internal, runId: "starting-03", directive: "Starting phase 03" });
 	const early = engine.progress;
 	assert.ok(early);
 	assert.equal(early!.status, "starting");
@@ -3248,8 +3279,8 @@ async function makeBranchingPlanDir(planDir: string): Promise<void> {
 		"- wave-02: phase-03-third.md",
 		"- wave-03: phase-02-second.md",
 		"", "## Model Assignments", "",
-		"- Basic Implementer: deepseek/deepseek-v4-flash:max",
-		"- Advanced Implementer: deepseek/deepseek-v4-pro:max",
+		"- Basic Implementer: openai-codex/gpt-5.6-luna:high",
+		"- Advanced Implementer: openai-codex/gpt-5.6-luna:max",
 		"- Validation: openai-codex/gpt-5.6-luna:xhigh",
 		"- phase-01-first.md: advanced",
 		"- phase-02-second.md: advanced",
@@ -3294,11 +3325,11 @@ test("start creates an execution record with frozen source snapshot and revision
 	assert.ok(record!.source.aggregateDigest.length === 64);
 	assert.equal(record!.frozen.phases.length, 2);
 	assert.deepEqual(record!.frozen.phases, ["phase-01-first.md", "phase-02-second.md"]);
-	assert.deepEqual(record!.frozen.basicImplementationModel, { provider: "deepseek", model: "deepseek-v4-flash", thinking: "max" });
-	assert.deepEqual(record!.frozen.advancedImplementationModel, { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" });
+	assert.deepEqual(record!.frozen.basicImplementationModel, { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "high" });
+	assert.deepEqual(record!.frozen.advancedImplementationModel, { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "max" });
 	assert.deepEqual(record!.frozen.phaseImplementationModels, {
-		"phase-01-first.md": { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" },
-		"phase-02-second.md": { provider: "deepseek", model: "deepseek-v4-flash", thinking: "max" },
+		"phase-01-first.md": { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "max" },
+		"phase-02-second.md": { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "high" },
 	});
 
 	// Manifest exists
@@ -3434,7 +3465,7 @@ test("checkpoint records implementation evidence and increments revision", async
 	const phase1 = record!.phases.find((p) => p.phase === "phase-01-first.md");
 	assert.ok(phase1?.implementation);
 	assert.equal(phase1!.implementation!.report, "Implemented phase 1 successfully.");
-	assert.deepEqual(phase1!.implementation!.agentModel.provider, "deepseek");
+	assert.deepEqual(phase1!.implementation!.agentModel.provider, "openai-codex");
 
 	await interruptActiveRecord(handle, "Test cleanup.");
 });

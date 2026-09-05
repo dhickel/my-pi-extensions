@@ -25,7 +25,7 @@ After installation or source updates, run `/reload` or restart Pi.
 
 ## Extension commands
 
-- `/sprint [--name <slug>] [--agents 2..8] <prompt>` runs brainstorm → ironout → corrected advanced planning, then stops.
+- `/sprint [--name <slug>] <prompt>` runs brainstorm → ironout → corrected advanced planning, then stops.
 - `/sprint status|pause|resume|reset|list|doctor [run-id]` manages a persisted planning run:
   - `status` — show the current sprint state and progress.
   - `pause` — interrupt at a durable checkpoint without losing work.
@@ -33,7 +33,7 @@ After installation or source updates, run `/reload` or restart Pi.
   - `reset` — confirm and permanently delete the selected sprint directory; never reverts repository edits.
   - `list` — discover every planning and execution record under `.internal-dev/sprints/` with kind, state, markers, and lease ownership.
   - `doctor` — read-only diagnosis of a selected sprint record with severity-graded findings. Performs no writes, releases, clearing, or takeover.
-- `/brainstorm [--agents 2..8] <prompt>` runs findings → same-session all-to-all cross-review → synthesis → red team. Supports `status` and `cancel`.
+- `/brainstorm <prompt>` runs 3 routed domains × 2 workers (6 findings) → synthesis (condensing all findings and noting worker disagreements) → red team (reviewing all findings, resolving disagreements, and fixing undersights or oversights). Supports `status` and `cancel`.
 - `/ironout [--interactive|--auto] <prompt>` runs standalone handoff authoring and corrective review. Interactive mode uses up to 3 rounds of at most 3 choice questions. Supports `status` and `cancel`.
 - `/advanceplan <prompt>` runs advanced planning with concept, orchestration, and per-phase corrective reviews. Plans use practical one-session sizing (roughly 200,000–300,000 tokens maximum) and divide cohesive phases that may exceed one agent session's context into ordered lettered subphases, with validation only after all subphases complete. Supports `status` and `cancel`.
 
@@ -43,7 +43,7 @@ Standalone commands support `status` and `cancel`, use in-memory child sessions,
 
 ## Agent-callable planning tools
 
-- `sprint_brainstorm` — accepts an authoritative prompt and optional worker count (2–8), starts the mandatory same-session findings and all-to-all cross-review lifecycle in the background, and returns its run id immediately.
+- `sprint_brainstorm` — accepts an authoritative prompt, starts the engine-owned brainstorm lifecycle (3 domains, two workers per domain, then synthesis and red team over every finding) in the background, and returns its run id immediately.
 - `sprint_ironout` — accepts a brainstorm directory or other input artifact path, starts autonomous authoring and corrective review via engine-owned model routes in the background, and returns its run id immediately.
 - `sprint_advanceplan` — accepts a corrected handoff path, starts concept review → orchestration review → per-phase reviews via engine-owned model routes in the background, and returns its run id immediately.
 - `sprint_poll` — waits for background planning completion, consumes terminal results, and reports remaining workflows. It wakes early for queued user input so the main agent can answer, then a hidden turn-end reminder directs it back to polling until no workflow or undelivered result remains.
@@ -52,9 +52,9 @@ Together with `sprint_validate_plan` and `sprint_execution_record`, these are th
 
 ## Agent model configuration
 
-Every sprint-planner agent assignment lives in `configs/`. `configs/default.ts` is the current configuration and must conform to `SprintPlannerAgentConfiguration` in `types.ts` — covering every planning stage plus the basic implementer, advanced implementer, phase validator, integration validator, and senior agent. `configs/index.ts` registers installed configurations and fixes `DEFAULT_SPRINT_PLANNER_AGENT_CONFIGURATION` to `default`.
+Every sprint-planner agent assignment lives in `configs/`. `configs/default.ts` is the current configuration and must conform to `SprintPlannerAgentConfiguration` in `types.ts` — covering every planning stage plus the red-team validator, basic implementer, advanced implementer, phase validator, integration validator, and senior agent. `configs/index.ts` registers installed configurations and fixes `DEFAULT_SPRINT_PLANNER_AGENT_CONFIGURATION` to `default`. The dedicated `redTeamValidator` assignment is `openai-codex/gpt-6-astra:high`.
 
-When Pi loads `sprintPlannerExtension()`, the extension resolves that fixed default into `currentAgentConfiguration`. Every `SprintPlannerEngine` created by the extension receives this same configuration snapshot and uses it for every pipeline stage. Resolved tuples, not configuration names, remain in persisted state. There is no runtime setting, command option, or tool parameter to select another configuration yet.
+When Pi loads `sprintPlannerExtension()`, the extension resolves that fixed default into `currentAgentConfiguration`. Every `SprintPlannerEngine` created by the extension receives this same configuration snapshot and uses it for every pipeline stage. The extension also exposes individual assignments through the version-1 `sprint-planner:agent-assignment:request`/response event-bus service; Job Planner uses that service to resolve `redTeamValidator` for its mandatory pre-publication plan review. Resolved tuples, not configuration names, remain in persisted state. There is no runtime setting, command option, or tool parameter to select another configuration yet.
 
 A future configuration must be added as a schema-conforming file in `configs/`, registered in `configs/index.ts`, and paired with an explicitly approved configuration-selection contract. Do not alter the default loader or expose a caller-selected model as a shortcut.
 
@@ -96,9 +96,10 @@ The skill calls `sprint_validate_plan` for generated plans before starting, then
 
 Advanced planning resolves the loaded config and hard-codes the model contract into each plan. The active `default` configuration supplies:
 
-- basic implementation: `deepseek/deepseek-v4-flash:max` for documentation, writing, closeout, routine edits, straightforward scripts, and simple non-logic-heavy programming;
-- advanced implementation: `deepseek/deepseek-v4-pro:max` for logic-heavy code, vertical slices, advanced programming, and difficult algorithms or mathematics;
-- independent review-and-repair validation of every phase and final integration: `openai-codex/gpt-5.6-luna` at `xhigh`.
+- basic implementation: `openai-codex/gpt-5.6-luna:high` for documentation, writing, closeout, routine edits, straightforward scripts, and simple non-logic-heavy programming;
+- advanced implementation: `openai-codex/gpt-5.6-luna:max` for logic-heavy code, vertical slices, advanced programming, and difficult algorithms or mathematics;
+- independent review-and-repair validation of every phase and final integration: `openai-codex/gpt-5.6-luna` at `xhigh`;
+- roles formerly assigned to GPT-5.6 Sol use `openai-codex/gpt-6-astra` with their configured thinking tier.
 
 The orchestrate skill consumes the plan-owned model contract: it reads each validated per-phase `basic` or `advanced` assignment from `orchestration.md`, confirms the execution record freezes the same tuple, and explicitly supplies it to every implementation spawn. Only when the input carries no validated model assignments does it fall back to the active configuration's `basicImplementer`, `advancedImplementer`, and `phaseValidator` tuples. It preflights every distinct assigned implementation tuple plus the plan-owned validation tuple before edits. Preflight children receive exactly `tools: []`; implementers and phase/integration validators receive exactly `tools: ["read", "bash", "edit", "write"]`. Only optional senior escalation resolves `seniorAgent` directly from configuration. Each validator fixes in-scope defects itself, reruns checks, and returns only `VERDICT: PASS` or `VERDICT: BLOCKED`; dependents wait for PASS.
 
@@ -108,9 +109,9 @@ The skill is root-session only and does not claim background persistence, automa
 
 ## Brainstorm lifecycle
 
-The engine waits for every `findings.md`, continues each original worker session with every other finding, waits for every `cross-review.md`, and only then starts synthesis. A missing or failed cross-review stops the workflow; no partial standalone brainstorm is published.
+The engine routes exactly 3 domains and waits for every worker finding (worker 1 and worker 2 per domain, six findings total) before starting synthesis. A missing or failed worker finding stops the workflow; no partial standalone brainstorm is published. The synthesis condenses all findings and records where workers differ in opinion; the red team then reviews every finding plus the synthesis, picks the best path on disagreements, and resolves any undersights or oversights it finds.
 
-Root agents call `sprint_brainstorm` for the same engine-owned lifecycle. Generic manual subagent coordination is not equivalent to this mandatory cross-review barrier.
+Root agents call `sprint_brainstorm` for the same engine-owned lifecycle. Generic manual subagent coordination is not equivalent to this mandatory findings barrier.
 
 ## Planning and structural gates
 

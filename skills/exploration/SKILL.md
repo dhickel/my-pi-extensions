@@ -1,9 +1,9 @@
 ---
 name: exploration
-description: Trigger this skill whenever the agent is about to explore, scout, scour, survey, map, trace, or summarize a codebase/document area across multiple files. Use for bigger-picture architecture maps, behavior/location searches, API/data-flow overviews, docs/tests/spec synthesis, and function/class logic summaries without loading every source file into root context. Runs 1–6 read-only deepseek/deepseek-v4-flash:max agents. Do not use for routine small edits or as a replacement for directly reading critical logic before implementation.
-compatibility: Requires Pi with subagent_spawn, subagent_poll, and subagent_status; configured deepseek/deepseek-v4-flash with max thinking.
+description: Trigger this skill whenever the agent is about to explore, scout, scour, survey, map, trace, or summarize a codebase/document area across multiple files. Use for bigger-picture architecture maps, behavior/location searches, API/data-flow overviews, docs/tests/spec synthesis, and function/class logic summaries without loading every source file into root context. Runs 1–6 read-only openai-codex/gpt-5.6-luna:high agents. Do not use for routine small edits or as a replacement for directly reading critical logic before implementation.
+compatibility: Requires Pi with subagent_spawn, subagent_poll, and subagent_status; configured openai-codex/gpt-5.6-luna with high thinking.
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
 ---
 
 # Exploration
@@ -49,12 +49,12 @@ Use exploration to decide where to look and to avoid context pollution, then loa
 
 Every exploration subagent must be launched explicitly with:
 
-- `provider`: `deepseek`
-- `model`: `deepseek-v4-flash`
-- `thinkingLevel`: `max`
+- `provider`: `openai-codex`
+- `model`: `gpt-5.6-luna`
+- `thinkingLevel`: `high`
 - `tools`: `["read", "bash"]`
 
-Never inherit, omit, downgrade, clamp, or substitute these values. Inherited caller model/provider/thinking is forbidden even if the caller is already DeepSeek. If `deepseek-v4-flash:max`, `subagent_spawn`, `subagent_poll`, or the exact read-only tool set is unavailable, do not emulate this skill with another model. Report the blocker and proceed with ordinary root inspection only if appropriate.
+Never inherit, omit, downgrade, clamp, or substitute these values. Inherited caller model/provider/thinking is forbidden even if the caller is already the same model. If `gpt-5.6-luna:high`, `subagent_spawn`, `subagent_poll`, or the exact read-only tool set is unavailable, do not emulate this skill with another model. Report the blocker and proceed with ordinary root inspection only if appropriate.
 
 Exploration agents are read-only. They must not receive `edit`, `write`, subagent, sprint, user-questioning, or other root-only tools. They may use `bash` for `rg`, `find`, `ls`, lightweight parsing commands, and read-only inspections. They must not mutate files, install packages, run long builds, start services, or perform destructive commands.
 
@@ -106,17 +106,17 @@ Use a single `subagent_spawn` batch with 1–6 agents. Give each a unique name.
     {
       "name": "explore-architecture-<unique>",
       "task": "<self-contained architecture exploration brief>",
-      "provider": "deepseek",
-      "model": "deepseek-v4-flash",
-      "thinkingLevel": "max",
+      "provider": "openai-codex",
+      "model": "gpt-5.6-luna",
+      "thinkingLevel": "high",
       "tools": ["read", "bash"]
     },
     {
       "name": "explore-behavior-<unique>",
       "task": "<self-contained behavior tracing brief>",
-      "provider": "deepseek",
-      "model": "deepseek-v4-flash",
-      "thinkingLevel": "max",
+      "provider": "openai-codex",
+      "model": "gpt-5.6-luna",
+      "thinkingLevel": "high",
       "tools": ["read", "bash"]
     }
   ]

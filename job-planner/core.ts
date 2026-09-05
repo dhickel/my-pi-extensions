@@ -1,4 +1,4 @@
-import { lstat, mkdir, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, open, readFile, rmdir, unlink } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
 export const MAX_QUESTIONS_PER_ROUND = 3;
@@ -31,6 +31,16 @@ export interface JobPlanInput {
 	outOfScope: string[];
 }
 
+export interface JobPlanValidationRecord {
+	verdict: "PASS";
+	provider: string;
+	model: string;
+	thinking: string;
+	attempts: number;
+	repairs: number;
+	validatedAt: string;
+}
+
 export interface PublishedJobPlan {
 	id: string;
 	directory: string;
@@ -41,6 +51,36 @@ export interface PublishedJobPlan {
 function nonblank(value: unknown, path: string): string {
 	if (typeof value !== "string" || !value.trim()) throw new Error(`${path} must be a nonblank string.`);
 	return value.trim();
+}
+
+function stringArray(value: unknown, path: string, minimum: number): string[] {
+	if (!Array.isArray(value) || value.length < minimum) throw new Error(`${path} must contain at least ${minimum} item(s).`);
+	return value.map((item, index) => nonblank(item, `${path}[${index}]`));
+}
+
+export function validateJobPlan(value: unknown): JobPlanInput {
+	if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Job plan must be an object.");
+	const candidate = value as Record<string, unknown>;
+	const title = nonblank(candidate.title, "title");
+	if (title.length > 160) throw new Error("title must be at most 160 characters.");
+	if (!Array.isArray(candidate.targets) || candidate.targets.length < 1) throw new Error("targets must contain at least one item.");
+	const targets = candidate.targets.map((raw, index) => {
+		if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error(`targets[${index}] must be an object.`);
+		const target = raw as Record<string, unknown>;
+		return { target: nonblank(target.target, `targets[${index}].target`), change: nonblank(target.change, `targets[${index}].change`) };
+	});
+	return {
+		title,
+		feature: nonblank(candidate.feature, "feature"),
+		requirements: stringArray(candidate.requirements, "requirements", 1),
+		targets,
+		constraints: stringArray(candidate.constraints, "constraints", 1),
+		assumptions: stringArray(candidate.assumptions, "assumptions", 0),
+		decisions: stringArray(candidate.decisions, "decisions", 0),
+		implementationSteps: stringArray(candidate.implementationSteps, "implementationSteps", 1),
+		validationCriteria: stringArray(candidate.validationCriteria, "validationCriteria", 1),
+		outOfScope: stringArray(candidate.outOfScope, "outOfScope", 0),
+	};
 }
 
 export function validateQuestions(value: unknown): JobQuestion[] {
@@ -96,20 +136,43 @@ function bullets(values: readonly string[]): string {
 	return values.length ? values.map((value) => `- ${value.trim()}`).join("\n") : "- None.";
 }
 
-export function renderJobPlan(plan: JobPlanInput, interview: { rounds: number; questions: number }): string {
-	const targets = plan.targets.map(({ target, change }) => `- \`${target.trim()}\`: ${change.trim()}`).join("\n");
-	const steps = plan.implementationSteps.map((step, index) => `${index + 1}. ${step.trim()}`).join("\n");
-	return `# ${plan.title.trim()}\n\n` +
-		`## Feature\n\n${plan.feature.trim()}\n\n` +
-		`## Required Behavior\n\n${bullets(plan.requirements)}\n\n` +
+export function validateJobPlanValidationRecord(value: unknown): JobPlanValidationRecord {
+	if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("A complete red-team validation record is required.");
+	const candidate = value as Record<string, unknown>;
+	if (candidate.verdict !== "PASS") throw new Error("Red-team validation verdict must be PASS.");
+	const attempts = candidate.attempts;
+	const repairs = candidate.repairs;
+	if (!Number.isSafeInteger(attempts) || (attempts as number) < 1) throw new Error("Red-team validation attempts must be a positive integer.");
+	if (!Number.isSafeInteger(repairs) || (repairs as number) < 0) throw new Error("Red-team repair count must be a nonnegative integer.");
+	const validatedAt = nonblank(candidate.validatedAt, "validation.validatedAt");
+	if (!Number.isFinite(Date.parse(validatedAt))) throw new Error("validation.validatedAt must be an ISO-compatible timestamp.");
+	return {
+		verdict: "PASS",
+		provider: nonblank(candidate.provider, "validation.provider"),
+		model: nonblank(candidate.model, "validation.model"),
+		thinking: nonblank(candidate.thinking, "validation.thinking"),
+		attempts: attempts as number,
+		repairs: repairs as number,
+		validatedAt,
+	};
+}
+
+export function renderJobPlan(plan: JobPlanInput, interview: { rounds: number; questions: number }, validation: JobPlanValidationRecord): string {
+	const normalized = validateJobPlan(plan);
+	const validated = validateJobPlanValidationRecord(validation);
+	const targets = normalized.targets.map(({ target, change }) => `- \`${target}\`: ${change}`).join("\n");
+	const steps = normalized.implementationSteps.map((step, index) => `${index + 1}. ${step}`).join("\n");
+	return `# ${normalized.title}\n\n` +
+		`## Feature\n\n${normalized.feature}\n\n` +
+		`## Required Behavior\n\n${bullets(normalized.requirements)}\n\n` +
 		`## Targets\n\n${targets}\n\n` +
-		`## Constraints\n\n${bullets(plan.constraints)}\n\n` +
-		`## Assumptions\n\n${bullets(plan.assumptions)}\n\n` +
-		`## Settled Decisions\n\n${bullets(plan.decisions)}\n\n` +
+		`## Constraints\n\n${bullets(normalized.constraints)}\n\n` +
+		`## Assumptions\n\n${bullets(normalized.assumptions)}\n\n` +
+		`## Settled Decisions\n\n${bullets(normalized.decisions)}\n\n` +
 		`## Implementation Approach\n\n${steps}\n\n` +
-		`## Validation Criteria\n\n${bullets(plan.validationCriteria)}\n\n` +
-		`## Out of Scope\n\n${bullets(plan.outOfScope)}\n\n` +
-		`## Planning Record\n\n- Interactive rounds completed: ${interview.rounds}\n- User questions answered: ${interview.questions}\n- Remaining consequential open questions: none\n`;
+		`## Validation Criteria\n\n${bullets(normalized.validationCriteria)}\n\n` +
+		`## Out of Scope\n\n${bullets(normalized.outOfScope)}\n\n` +
+		`## Planning Record\n\n- Interactive rounds completed: ${interview.rounds}\n- User questions answered: ${interview.questions}\n- Red-team validation: ${validated.verdict}\n- Red-team validator: ${validated.provider}/${validated.model}:${validated.thinking}\n- Red-team validation attempts: ${validated.attempts}\n- Inferable issues corrected: ${validated.repairs}\n- Validated at: ${validated.validatedAt}\n- Remaining consequential open questions: none\n`;
 }
 
 async function stat(path: string) {
@@ -139,25 +202,73 @@ export async function locateInternalDev(cwd: string): Promise<{ projectRoot: str
 	}
 }
 
-export async function publishJobPlan(cwd: string, plan: JobPlanInput, interview: { rounds: number; questions: number }): Promise<PublishedJobPlan> {
+function throwIfAborted(signal?: AbortSignal): void {
+	if (signal?.aborted) throw new Error("Job-plan publication was cancelled.");
+}
+
+interface FileIdentity {
+	dev: number | bigint;
+	ino: number | bigint;
+}
+
+const sameIdentity = (left: FileIdentity, right: FileIdentity): boolean => left.dev === right.dev && left.ino === right.ino;
+
+async function cleanupOwnedReservation(directory: string, directoryIdentity: FileIdentity, ownedFile?: { path: string; identity: FileIdentity; content: string }): Promise<void> {
+	const currentDirectory = await stat(directory);
+	if (!currentDirectory || !sameIdentity(currentDirectory, directoryIdentity)) return;
+	if (ownedFile) {
+		const beforeRead = await stat(ownedFile.path);
+		if (!beforeRead || beforeRead.isSymbolicLink() || !beforeRead.isFile() || !sameIdentity(beforeRead, ownedFile.identity)) return;
+		const content = await readFile(ownedFile.path, "utf8").catch(() => undefined);
+		const afterRead = await stat(ownedFile.path);
+		if (content !== ownedFile.content || !afterRead || !sameIdentity(afterRead, ownedFile.identity)) return;
+		await unlink(ownedFile.path).catch(() => undefined);
+	}
+	const beforeRemove = await stat(directory);
+	if (!beforeRemove || !sameIdentity(beforeRemove, directoryIdentity)) return;
+	await rmdir(directory).catch(() => undefined);
+}
+
+export async function publishJobPlan(cwd: string, plan: JobPlanInput, interview: { rounds: number; questions: number }, validation: JobPlanValidationRecord, signal?: AbortSignal): Promise<PublishedJobPlan> {
+	const normalized = validateJobPlan(plan);
+	validateJobPlanValidationRecord(validation);
+	throwIfAborted(signal);
 	const location = await locateInternalDev(cwd);
+	throwIfAborted(signal);
+	const content = renderJobPlan(normalized, interview, validation);
 	const stamp = new Date().toISOString().replace(/[-:]/g, "").replace("T", "-").slice(0, 15);
-	const base = `${stamp}-${safeSlug(plan.title)}`;
+	const base = `${stamp}-${safeSlug(normalized.title)}`;
 	for (let suffix = 1; suffix < 10_000; suffix++) {
 		const id = `${base}${suffix === 1 ? "" : `-${suffix}`}`;
 		const directory = resolve(location.plansPath, id);
 		try {
+			throwIfAborted(signal);
 			await mkdir(directory);
 		} catch (error) {
 			if ((error as NodeJS.ErrnoException).code === "EEXIST") continue;
 			throw error;
 		}
+		const directoryStat = await lstat(directory);
+		const directoryIdentity = { dev: directoryStat.dev, ino: directoryStat.ino };
 		const path = resolve(directory, "plan.md");
+		let ownedFile: { path: string; identity: FileIdentity; content: string } | undefined;
 		try {
-			await writeFile(path, renderJobPlan(plan, interview), { encoding: "utf8", flag: "wx" });
+			throwIfAborted(signal);
+			const handle = await open(path, "wx");
+			try {
+				const opened = await handle.stat();
+				ownedFile = { path, identity: { dev: opened.dev, ino: opened.ino }, content };
+				await handle.writeFile(content, { encoding: "utf8" });
+			} finally {
+				await handle.close();
+			}
+			if (signal?.aborted) {
+				await cleanupOwnedReservation(directory, directoryIdentity, ownedFile);
+				throwIfAborted(signal);
+			}
 			return { id, directory, path, projectRoot: location.projectRoot };
 		} catch (error) {
-			await rm(directory, { recursive: true, force: false }).catch(() => undefined);
+			await cleanupOwnedReservation(directory, directoryIdentity, ownedFile).catch(() => undefined);
 			throw error;
 		}
 	}

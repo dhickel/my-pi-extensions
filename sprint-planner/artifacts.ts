@@ -256,7 +256,6 @@ export class SprintStateStore {
 			throw new Error("Malformed sprint state: required fields are absent or unsupported.");
 		}
 		if (!["running", "paused", "interrupted", "failed", "completed", "cancelled"].includes(state.status) || !["brainstorm", "ironout", "planning", "complete"].includes(String(state.stage))) throw new Error("Malformed sprint state: invalid run status or stage.");
-		if (!Number.isInteger(state.agents) || state.agents! < 2 || state.agents! > 8) throw new Error("Malformed sprint state: invalid brainstorm concurrency.");
 		if (resolve(state.runDirectory) !== resolve(this.runDirectory)) throw new Error("Sprint state runDirectory does not match its directory.");
 		const runId = assertSafeRelativePath(state.runId);
 		if (runId.includes("/") || resolve(state.projectRoot, ".internal-dev", "sprints", runId) !== resolve(this.runDirectory)) {

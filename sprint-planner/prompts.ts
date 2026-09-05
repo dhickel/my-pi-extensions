@@ -12,22 +12,22 @@ const DIRECTIVE_SCOPE_AUTHORITY = "The user's original directive is the authorit
 const EXPLORATION_GUIDANCE = "Use the exploration skill whenever understanding spans multiple files or a broad code area; this is expected before settling overarching code concepts. Ask it to investigate large relevant portions of the codebase and return concise architecture and behavior maps, important type/function/class signatures, control and data flows, invariants, and integration boundaries. Summarize those findings into the artifact, then directly inspect any critical implementation logic needed for an authoritative conclusion.";
 
 export const BRAINSTORM_LIFECYCLE_REQUIREMENT =
-	"Every worker must submit findings, then continue in the same session to review every other worker report; synthesis must not start until every findings.md and cross-review.md exists. The cross-review round is unconditional and must never be skipped.";
+	"Three domains are routed, and every domain must produce findings from both of its assigned workers; synthesis must not start until all six worker findings exist. Synthesis condenses every finding and records where workers differ in opinion; the red team then reviews every finding plus the synthesis, resolves disagreements, and checks for undersights or oversights.";
 
 export const BRAINSTORM_TOOL_DESCRIPTION =
 	`Run the engine-owned standalone brainstorm lifecycle. ${BRAINSTORM_LIFECYCLE_REQUIREMENT} Use this agent-callable workflow instead of manually spawning brainstorm subagents.`;
 
 export const BRAINSTORM_TOOL_GUIDELINES = [
 	"Use sprint_brainstorm instead of subagent_spawn when the user asks the agent to run the sprint-planner brainstorm workflow.",
-	"Never synthesize sprint-planner brainstorm findings without every original worker completing the same-session all-to-all cross-review; sprint_brainstorm enforces this barrier.",
+	"Never synthesize sprint-planner brainstorm findings until every domain has findings from both workers; sprint_brainstorm enforces this barrier.",
 ] as const;
 
-export function routeRolesPrompt(directive: string, count: number): string {
-	return `You route a brainstorming task into complementary broad lenses. Do not solve the task and do not create narrow nit-picking roles.
+export function routeRolesPrompt(directive: string): string {
+	return `You route a brainstorming task into exactly 3 complementary domains. Do not solve the task and do not create narrow nit-picking roles.
 
 ${INTERPRET_INPUT}
 
-Return exactly ${count} roles as JSON: {"roles":[{"id":"safe-slug","name":"...","lens":"..."}]}. Cover useful combinations of architecture, scope, constraints, risks, project alignment, implementation approaches, and domain research according to the directive. Roles must remain broad idea-generating lenses and must not duplicate each other.
+Return exactly 3 domains as JSON: {"roles":[{"id":"safe-slug","name":"...","lens":"..."}]}. Cover useful combinations of architecture, scope, constraints, risks, project alignment, implementation approaches, and domain research according to the directive. Domains must remain broad idea-generating lenses and must not duplicate each other.
 
 <directive>
 ${directive}
@@ -36,8 +36,8 @@ ${directive}
 ${SUBMIT}`;
 }
 
-export function brainstormPrompt(directive: string, role: BrainstormRole): string {
-	return `You are the ${role.name} brainstorming worker. Explore implementation approaches for the user's directive, and their targets and scope, through this lens: ${role.lens}. Stay exploratory; do not implement or edit the project.
+export function brainstormPrompt(directive: string, role: BrainstormRole, workerIndex: 1 | 2): string {
+	return `You are worker ${workerIndex} of 2 assigned to the ${role.name} brainstorming domain. Explore implementation approaches for the user's directive, and their targets and scope, through this lens: ${role.lens}. Work independently: the other worker assigned to this domain produces a separate findings report you will not see, and differing conclusions are expected and useful.
 
 ${INTERPRET_INPUT}
 
@@ -52,21 +52,9 @@ ${directive}
 ${SUBMIT}`;
 }
 
-export function crossReviewPrompt(ownRole: BrainstormRole, otherReports: readonly { path: string; content: string }[]): string {
-	return `Continue in the same child session that produced ${ownRole.name}'s findings. Review every other required report below. Compare useful ideas, conflicts, omissions, feasibility, and trade-offs; preserve your broad lens without merely defending your first answer. Do not edit the project.
-
-Check whether the combined ideas form implementation approaches that fully serve the user's directive without ballooning scope. ${BRAINSTORM_SCOPE_GUIDANCE} ${COMPLETE_PRODUCTION_SCOPE}
-
-Your Markdown must contain these level-two headings: Prompt, Source, Findings, Options, Trade-offs, Open Questions, Recommended Next Step.
-
-${otherReports.map((report) => `<report path="${report.path}">\n${report.content}\n</report>`).join("\n\n")}
-
-${SUBMIT}`;
-}
-
 export function synthesisPrompt(directive: string, reports: readonly { path: string; content: string }[]): string {
 	const reportPaths = reports.map((report) => `- ${report.path}`).join("\n");
-	return `Synthesize the complete brainstorming effort into a concise, tightened best-of-class direction of implementation approaches for the user's directive. Select the strongest approach for each facet that serves the directive, reconcile conflicts, and contribute a better idea only where it improves the result. This is still a brainstorming synthesis, not an accepted implementation plan. Do not edit the project.
+	return `Condense the complete brainstorming effort into a concise, tightened best-of-class direction of implementation approaches for the user's directive. Synthesize every worker finding below. Select the strongest approach for each facet that serves the directive, and explicitly note where the workers differ in opinion, including when the two workers assigned to the same domain disagree; weigh those differences rather than silently averaging them. Contribute a better idea only where it improves the result. This is still a brainstorming synthesis, not an accepted implementation plan. Do not edit the project.
 
 ${BRAINSTORM_SCOPE_GUIDANCE} ${COMPLETE_PRODUCTION_SCOPE}
 
@@ -80,14 +68,16 @@ ${reports.map((report) => `<report path="${report.path}">\n${report.content}\n</
 ${SUBMIT}`;
 }
 
-export function redTeamPrompt(synthesis: string): string {
-	return `Red-team only the synthesis supplied below. You have intentionally not received raw worker reports. Identify overlooked issues, hidden constraints, likely defects, failure modes, invalid assumptions, production-quality gaps, incomplete scope coverage, scope ballooning beyond the user's directive, and any reliance on mocks, stubs, placeholders, deferred work, partial implementations, or shortcuts without reconstructing or asking for the raw reports. Enforce the requested scope without feature creep: production quality requires complete, validated requested behavior, not speculative, adjacent, optional, or otherwise unrequested additions, and never-deferred completion applies to user-directive work unless the directive itself asks for stubs or deferred items. Do not edit the project.
+export function redTeamPrompt(synthesis: string, reports: readonly { path: string; content: string }[]): string {
+	return `Red-team the complete brainstorming effort: you receive every raw worker finding below plus the condensed synthesis. Where workers differ in opinion, pick the best path and justify the choice with the evidence at hand. Identify overlooked issues, hidden constraints, likely defects, failure modes, invalid assumptions, production-quality gaps, and incomplete scope coverage. Enforce the requested scope without feature creep: production quality requires complete, validated requested behavior, not speculative, adjacent, optional, or otherwise unrequested additions; over-abstraction and specification creep are failures as much as missing work. Watch for anything vital to the user's directive that every worker overlooked; when you find an undersight or oversight, state it and solve it in your findings with a concrete resolution rather than only flagging it. Reject reliance on mocks, stubs, placeholders, deferred work, partial implementations, or shortcuts. Do not edit the project.
 
 Your Markdown must contain these level-two headings: Prompt, Source, Findings, Options, Trade-offs, Open Questions, Recommended Next Step.
 
 <authoritative-synthesis>
 ${synthesis}
 </authoritative-synthesis>
+
+${reports.map((report) => `<report path="${report.path}">\n${report.content}\n</report>`).join("\n\n")}
 
 ${SUBMIT}`;
 }
@@ -154,7 +144,7 @@ Most sprints should normally land around 5–10 phases (medium or large). Make t
 
 A phase is the atomic validation and dependency unit, not necessarily one implementation session. Group cohesive edits by target, domain, or vertical behavior — do not create one phase per bullet or aspect. Each unsplit phase must be a coherent, self-contained unit an implementer can own end-to-end and should reasonably fit within one agent session, using a practical assumed maximum of roughly 200,000–300,000 tokens. Use planning judgment only; do not perform or print a formal token estimate.
 
-Prefer lettered subphases whenever a cohesive phase is likely to exceed one implementation agent's context, needs too many files/details for one focused session, or would force an implementer to re-derive later work after a long edit chain. Divide the Implementation Steps into contiguous lettered subphases (A, B, C, and so on). Each subphase maps to its own separate sequential DeepSeek implementation agent session — do NOT write boilerplate claiming all subphases are one agent or one unit. Make each subphase a granular, ordered unit of work that should itself fit within one agent session under the same practical assumption. Keep the parent phase as the validation unit: phase validation happens only after every lettered subphase is complete, with no independent validation gate between subphases. The phase must explicitly instruct the implementer that each subphase is a separate agent session executed in letter order before the shared phase validator runs.
+Prefer lettered subphases whenever a cohesive phase is likely to exceed one implementation agent's context, needs too many files/details for one focused session, or would force an implementer to re-derive later work after a long edit chain. Divide the Implementation Steps into contiguous lettered subphases (A, B, C, and so on). Each subphase maps to its own separate sequential implementation agent session — do NOT write boilerplate claiming all subphases are one agent or one unit. Make each subphase a granular, ordered unit of work that should itself fit within one agent session under the same practical assumption. Keep the parent phase as the validation unit: phase validation happens only after every lettered subphase is complete, with no independent validation gate between subphases. The phase must explicitly instruct the implementer that each subphase is a separate agent session executed in letter order before the shared phase validator runs.
 
 Every phase must declare exact files in scope, ordered edits an implementer can follow without re-deriving architecture, invariants to preserve, edge cases to handle, and concise code or pseudocode examples only where they materially reduce ambiguity. Do not bloat context with obvious details.
 

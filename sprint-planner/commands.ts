@@ -1,10 +1,5 @@
 import { createHash } from "node:crypto";
-import {
-	DEFAULT_BRAINSTORM_AGENTS,
-	MAX_BRAINSTORM_AGENTS,
-	MIN_BRAINSTORM_AGENTS,
-	type WorkflowName,
-} from "./types.ts";
+import type { WorkflowName } from "./types.ts";
 
 export interface ParsedCommand {
 	workflow: WorkflowName;
@@ -12,7 +7,6 @@ export interface ParsedCommand {
 	input?: string;
 	runId?: string;
 	name?: string;
-	agents: number;
 	interactive?: boolean;
 }
 
@@ -57,13 +51,6 @@ function nextToken(input: string, offset: number): CommandToken | undefined {
 	}
 	if (escaping || quote) throw new Error("Unterminated quote or escape in command arguments.");
 	return { value, start, end: index };
-}
-
-function integer(value: string | undefined, option: string, min: number, max: number): number {
-	if (!value || !/^\d+$/.test(value)) throw new Error(`${option} requires an integer from ${min} to ${max}.`);
-	const parsed = Number(value);
-	if (parsed < min || parsed > max) throw new Error(`${option} must be from ${min} to ${max}.`);
-	return parsed;
 }
 
 export function safeSlug(value: string, fallback = "sprint"): string {
@@ -113,16 +100,15 @@ export function parseCommand(workflow: WorkflowName, raw: string): ParsedCommand
 		if (workflow === "sprint" && run) {
 			const runId = assertManagementRunId(run.value);
 			if (extra) throw new Error(`/${workflow} ${action} accepts at most one run id.`);
-			return { workflow, action, runId, agents: DEFAULT_BRAINSTORM_AGENTS };
+			return { workflow, action, runId };
 		}
 		if (workflow !== "sprint" && !["status", "cancel"].includes(action)) throw new Error(`/${workflow} supports status and cancel, but not ${action}.`);
 		if (workflow !== "sprint" && run) throw new Error(`/${workflow} ${action} does not accept a run id.`);
 		if (extra) throw new Error(`/${workflow} ${action} accepts at most one run id.`);
-		return { workflow, action, agents: DEFAULT_BRAINSTORM_AGENTS };
+		return { workflow, action };
 	}
 
 	let name: string | undefined;
-	let agents = DEFAULT_BRAINSTORM_AGENTS;
 	let interactive: boolean | undefined;
 	let offset = 0;
 	let input: string | undefined;
@@ -141,12 +127,11 @@ export function parseCommand(workflow: WorkflowName, raw: string): ParsedCommand
 			input = offset < raw.length ? raw.slice(offset) : undefined;
 			break;
 		}
-		if (selected.value === "--name" || selected.value === "--agents") {
+		if (selected.value === "--name") {
 			const value = nextToken(raw, offset);
-			if (!value) throw new Error(`${selected.value} requires ${selected.value === "--name" ? "a slug" : `an integer from ${MIN_BRAINSTORM_AGENTS} to ${MAX_BRAINSTORM_AGENTS}`}.`);
+			if (!value) throw new Error("--name requires a slug.");
 			offset = value.end;
-			if (selected.value === "--name") name = safeSlug(value.value);
-			else agents = integer(value.value, "--agents", MIN_BRAINSTORM_AGENTS, MAX_BRAINSTORM_AGENTS);
+			name = safeSlug(value.value);
 			continue;
 		}
 		if (selected.value === "--interactive") interactive = true;
@@ -158,17 +143,16 @@ export function parseCommand(workflow: WorkflowName, raw: string): ParsedCommand
 		}
 	}
 	if (workflow !== "sprint" && name) throw new Error("--name is only supported by /sprint.");
-	if (workflow !== "brainstorm" && workflow !== "sprint" && agents !== DEFAULT_BRAINSTORM_AGENTS) throw new Error(`--agents is not supported by /${workflow}.`);
 	if (workflow !== "ironout" && interactive !== undefined) throw new Error("--interactive and --auto are only supported by /ironout.");
-	return { workflow, action: "start", input: input || undefined, name, agents, interactive };
+	return { workflow, action: "start", input: input || undefined, name, interactive };
 }
 
 export function commandUsage(workflow: WorkflowName): string {
 	switch (workflow) {
 		case "sprint":
-			return "/sprint [--name <slug>] [--agents 2..8] <prompt> | status|pause|resume|reset|list|doctor [run-id]";
+			return "/sprint [--name <slug>] <prompt> | status|pause|resume|reset|list|doctor [run-id]";
 		case "brainstorm":
-			return "/brainstorm [--agents 2..8] <prompt> | status|cancel";
+			return "/brainstorm <prompt> | status|cancel";
 		case "ironout":
 			return "/ironout [--interactive|--auto] <prompt> | status|cancel";
 		case "advanceplan":

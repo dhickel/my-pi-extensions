@@ -19,7 +19,6 @@ import {
 	advancedPhaseReviewPrompt,
 	advancedPlanPrompt,
 	brainstormPrompt,
-	crossReviewPrompt,
 	ironoutPrompt,
 	ironoutReviewPrompt,
 	redTeamPrompt,
@@ -56,7 +55,8 @@ import {
 } from "./validation.ts";
 import { loadDefaultSprintPlannerAgentConfiguration } from "./configs/index.ts";
 import {
-	DEFAULT_BRAINSTORM_AGENTS,
+	BRAINSTORM_DOMAINS,
+	BRAINSTORM_WORKERS_PER_DOMAIN,
 	MAX_STEP_ATTEMPTS,
 	ORCHESTRATION_HEADINGS,
 	SPRINT_STATE_VERSION,
@@ -94,6 +94,10 @@ interface CorrectedPlanResult {
 
 function seniorAdvisorModel(configuration: SprintPlannerAgentConfiguration, assignment: SprintPlannerAgentConfiguration[keyof SprintPlannerAgentConfiguration]): ModelTuple | undefined {
 	return assignment.seniorAdvisor ? configuration[assignment.seniorAdvisor].model : undefined;
+}
+
+function brainstormWorkerModel(configuration: SprintPlannerAgentConfiguration, workerIndex: 1 | 2): ModelTuple {
+	return workerIndex === 1 ? configuration.brainstormWorker1.model : configuration.brainstormWorker2.model;
 }
 
 function expectedPlanModels(configuration: SprintPlannerAgentConfiguration) {
@@ -312,12 +316,6 @@ function errorText(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
 
-function normalizeAgents(value: number | undefined): number {
-	const count = value ?? DEFAULT_BRAINSTORM_AGENTS;
-	if (!Number.isInteger(count) || count < 2 || count > 8) throw new Error("agents must be from 2 to 8.");
-	return count;
-}
-
 function markdownExpectation(headings: string[]) {
 	return { kind: "markdown" as const, headings: { artifact: headings } };
 }
@@ -485,7 +483,6 @@ export class SprintPlannerEngine {
 			stage: "brainstorm",
 			directivePath: "input.md",
 			inputArtifact,
-			agents: normalizeAgents(options.agents),
 			steps: {},
 			createdAt: timestamp,
 			updatedAt: timestamp,
@@ -588,7 +585,7 @@ export class SprintPlannerEngine {
 		const directive = directiveInput.replace(/^# Sprint Input\s*/i, "").trim();
 		let publication: OwnedPublication[] = [];
 		try {
-			const brainstorm = await this.#sprintBrainstorm(directive, state.agents);
+			const brainstorm = await this.#sprintBrainstorm(directive);
 			const handoff = await this.#sprintIronout(brainstorm, directive);
 			const plan = await this.#sprintPlan(handoff);
 			const manifest = this.#manifestContent(directive, brainstorm, plan);
@@ -906,59 +903,35 @@ export class SprintPlannerEngine {
 		return this.#artifactStore!.read(selected);
 	}
 
-	async #sprintBrainstorm(directive: string, count: number) {
+	async #sprintBrainstorm(directive: string) {
 		const store = this.#artifactStore!;
 		const agents = this.agentConfiguration;
 		const rolesSubmission = await this.#step(
 			"brainstorm-route",
 			"brainstorm",
 			agents.roleRouter.model,
-			{ role: "brainstorm role router", mode: "planning", prompt: routeRolesPrompt(directive, count), contextPaths: ["input.md"], expectation: { kind: "roles" } },
-			(submission) => { validateRoles(submission.content, count); },
+			{ role: "brainstorm role router", mode: "planning", prompt: routeRolesPrompt(directive), contextPaths: ["input.md"], expectation: { kind: "roles" } },
+			(submission) => { validateRoles(submission.content, BRAINSTORM_DOMAINS); },
 			async (submission) => [await store.write("brainstorm/roles.json", submission.content!)],
 		);
-		const roles = rolesSubmission ? validateRoles(rolesSubmission.content, count) : validateRoles(await store.read("brainstorm/roles.json"), count);
+		const roles = rolesSubmission ? validateRoles(rolesSubmission.content, BRAINSTORM_DOMAINS) : validateRoles(await store.read("brainstorm/roles.json"), BRAINSTORM_DOMAINS);
 
-		// Scoped fan-out for findings.
-		const findingFactory = (role: BrainstormRole) => ((signal: AbortSignal) =>
+		// Scoped fan-out for findings: both assigned workers explore every domain.
+		const findingFactories = roles.flatMap((role) => ([1, 2] as const).map((workerIndex) => (signal: AbortSignal) =>
 			this.#step(
-				`brainstorm-findings-${role.id}`,
+				`brainstorm-findings-${role.id}-w${workerIndex}`,
 				"brainstorm",
-				agents.brainstormWorker.model,
-				{ role: `brainstorm worker: ${role.name}`, mode: "planning", prompt: brainstormPrompt(directive, role), contextPaths: ["input.md"], expectation: markdownExpectation(BRAINSTORM_HEADINGS) },
+				brainstormWorkerModel(agents, workerIndex),
+				{ role: `brainstorm worker ${workerIndex}: ${role.name}`, mode: "planning", prompt: brainstormPrompt(directive, role, workerIndex), contextPaths: ["input.md"], expectation: markdownExpectation(BRAINSTORM_HEADINGS) },
 				() => {},
-				async (submission) => [await store.write(`brainstorm/${role.id}/findings.md`, submission.content!)],
+				async (submission) => [await store.write(`brainstorm/${role.id}/worker-${workerIndex}.md`, submission.content!)],
 				signal,
 			)
-		);
-		await scopedFanOut(roles.map((role) => findingFactory(role)), this.#controller!.signal, "brainstorm-findings");
+		));
+		await scopedFanOut(findingFactories, this.#controller!.signal, "brainstorm-findings");
 
-		const findings = await Promise.all(roles.map(async (role) => ({ path: `brainstorm/${role.id}/findings.md`, content: await store.read(`brainstorm/${role.id}/findings.md`) })));
-		validateBrainstormFindings(findings, roles.map((role) => `brainstorm/${role.id}/findings.md`));
-
-		// Scoped fan-out for cross-reviews.
-		const crossFactory = (role: BrainstormRole) => ((signal: AbortSignal) => {
-			const stepId = `brainstorm-findings-${role.id}`;
-			const others = findings.filter((item) => item.path !== `brainstorm/${role.id}/findings.md`);
-			const crossId = `brainstorm-cross-${role.id}`;
-			if (!this.#state!.steps[crossId] && this.#state!.steps[stepId]?.sessionPath) {
-				this.#state!.steps[crossId] = { id: crossId, stage: "brainstorm", status: "pending", attempts: 0, model: { ...agents.brainstormWorker.model }, artifacts: [], sessionPath: this.#state!.steps[stepId].sessionPath, updatedAt: now() };
-			}
-			return this.#step(
-				crossId,
-				"brainstorm",
-				agents.brainstormWorker.model,
-				{ role: `cross-review worker: ${role.name}`, mode: "planning", prompt: crossReviewPrompt(role, others), contextPaths: others.map((item) => item.path), expectation: markdownExpectation(BRAINSTORM_HEADINGS) },
-				() => {},
-				async (submission) => [await store.write(`brainstorm/${role.id}/cross-review.md`, submission.content!)],
-				signal,
-			);
-		});
-		await scopedFanOut(roles.map((role) => crossFactory(role)), this.#controller!.signal, "brainstorm-cross-reviews");
-
-		const reports = await Promise.all(
-			roles.flatMap((role) => ["findings.md", "cross-review.md"].map(async (name) => ({ path: `brainstorm/${role.id}/${name}`, content: await store.read(`brainstorm/${role.id}/${name}`) }))),
-		);
+		const reports = await Promise.all(roles.flatMap((role) => ([1, 2] as const).map(async (workerIndex) => ({ path: `brainstorm/${role.id}/worker-${workerIndex}.md`, content: await store.read(`brainstorm/${role.id}/worker-${workerIndex}.md`) }))));
+		validateBrainstormFindings(reports, reports.map((item) => item.path));
 		const allReportPaths = reports.map((item) => item.path);
 		await this.#step(
 			"brainstorm-synthesis",
@@ -974,7 +947,7 @@ export class SprintPlannerEngine {
 			"brainstorm-red-team",
 			"brainstorm",
 			agents.brainstormRedTeam.model,
-			{ role: "brainstorm red team", mode: "planning", prompt: redTeamPrompt(synthesis), contextPaths: ["brainstorm/synthesis.md"], expectation: markdownExpectation(BRAINSTORM_HEADINGS) },
+			{ role: "brainstorm red team", mode: "planning", prompt: redTeamPrompt(synthesis, reports), contextPaths: [...allReportPaths, "brainstorm/synthesis.md"], expectation: markdownExpectation(BRAINSTORM_HEADINGS) },
 			() => {},
 			async (submission) => [await store.write("brainstorm/red-team.md", submission.content!)],
 		);
@@ -1183,7 +1156,7 @@ export class SprintPlannerEngine {
 			"",
 			"## Stages",
 			"",
-			`- Brainstorm: ${brainstorm.roles.length} roles, all findings and cross-reviews complete`,
+			`- Brainstorm: ${brainstorm.roles.length} domains, all worker findings complete`,
 			"- Ironout: corrective handoff signed off",
 			`- Planning: ${phaseCount} corrected phases plus concepts and orchestration; this is the terminal extension stage`,
 			"",
@@ -1340,36 +1313,29 @@ export class SprintPlannerEngine {
 		const agents = this.agentConfiguration;
 		const parent = resolve(options.internalDevPath, "brainstorm");
 		const staging = await createStandaloneStaging(parent, options.id);
-		const count = normalizeAgents(options.agents);
-		const rolesResult = await this.#standaloneCall(this.#request(options, { id: `${options.id}-route`, role: "brainstorm role router", model: agents.roleRouter.model, mode: "planning", prompt: routeRolesPrompt(options.directive, count), contextPaths: [], expectation: { kind: "roles" } }));
+		const rolesResult = await this.#standaloneCall(this.#request(options, { id: `${options.id}-route`, role: "brainstorm role router", model: agents.roleRouter.model, mode: "planning", prompt: routeRolesPrompt(options.directive), contextPaths: [], expectation: { kind: "roles" } }));
 		await staging.write("roles.json", rolesResult.content!);
-		const roles = validateRoles(rolesResult.content, count);
+		const roles = validateRoles(rolesResult.content, BRAINSTORM_DOMAINS);
 
-		// Scoped fan-out for standalone findings.
-		const findingFactories = roles.map((role) => (signal: AbortSignal) =>
-			this.#standaloneCall(this.#request(options, { id: `${options.id}-findings-${role.id}`, role: role.name, model: agents.brainstormWorker.model, mode: "planning", prompt: brainstormPrompt(options.directive, role), contextPaths: [], expectation: markdownExpectation(BRAINSTORM_HEADINGS), sessionPath: `memory:${options.id}:${role.id}` }), undefined, signal),
-		);
+		// Scoped fan-out for standalone findings: both assigned workers explore every domain.
+		const findingFactories = roles.flatMap((role) => ([1, 2] as const).map((workerIndex) => (signal: AbortSignal) =>
+			this.#standaloneCall(this.#request(options, { id: `${options.id}-findings-${role.id}-w${workerIndex}`, role: `brainstorm worker ${workerIndex}: ${role.name}`, model: brainstormWorkerModel(agents, workerIndex), mode: "planning", prompt: brainstormPrompt(options.directive, role, workerIndex), contextPaths: [], expectation: markdownExpectation(BRAINSTORM_HEADINGS), sessionPath: `memory:${options.id}:${role.id}:w${workerIndex}` }), undefined, signal),
+		));
 		const findings = await scopedFanOut(findingFactories, this.#controller!.signal, "standalone-findings");
-		const findingReports = findings.map((submission, index) => ({ path: `${roles[index].id}/findings.md`, content: submission.content! }));
-		await writeStagedFiles(staging, "", findingReports);
+		const reports = findings.map((submission, index) => {
+			const role = roles[Math.floor(index / BRAINSTORM_WORKERS_PER_DOMAIN)]!;
+			const workerIndex = (index % BRAINSTORM_WORKERS_PER_DOMAIN) + 1;
+			return { path: `${role.id}/worker-${workerIndex}.md`, content: submission.content! };
+		});
+		await writeStagedFiles(staging, "", reports);
 		try {
-			validateBrainstormFindings(findingReports, roles.map((role) => `${role.id}/findings.md`));
+			validateBrainstormFindings(reports, reports.map((item) => item.path));
 		} catch (error) {
 			this.#reportStandaloneValidationFailure(error, staging.runDirectory);
 			throw error;
 		}
-
-		// Scoped fan-out for standalone cross-reviews.
-		const crossFactories = roles.map((role) => (signal: AbortSignal) =>
-			this.#standaloneCall(this.#request(options, { id: `${options.id}-cross-${role.id}`, role: `${role.name} cross reviewer`, model: agents.brainstormWorker.model, mode: "planning", prompt: crossReviewPrompt(role, findingReports.filter((item) => item.path !== `${role.id}/findings.md`)), contextPaths: findingReports.filter((item) => item.path !== `${role.id}/findings.md`).map((item) => item.path), expectation: markdownExpectation(BRAINSTORM_HEADINGS), sessionPath: `memory:${options.id}:${role.id}` }), undefined, signal),
-		);
-		const crosses = await scopedFanOut(crossFactories, this.#controller!.signal, "standalone-cross-reviews");
-
-		const crossReports = crosses.map((submission, index) => ({ path: `${roles[index].id}/cross-review.md`, content: submission.content! }));
-		await writeStagedFiles(staging, "", crossReports);
-		const allReports = [...findingReports, ...crossReports];
-		const allReportPaths = allReports.map((item) => item.path);
-		const synthesis = await this.#standaloneCall(this.#request(options, { id: `${options.id}-synthesis`, role: "brainstorm synthesizer", model: agents.brainstormSynthesis.model, mode: "planning", prompt: synthesisPrompt(options.directive, allReports), contextPaths: allReports.map((item) => item.path), expectation: markdownExpectation(BRAINSTORM_HEADINGS) }));
+		const allReportPaths = reports.map((item) => item.path);
+		const synthesis = await this.#standaloneCall(this.#request(options, { id: `${options.id}-synthesis`, role: "brainstorm synthesizer", model: agents.brainstormSynthesis.model, mode: "planning", prompt: synthesisPrompt(options.directive, reports), contextPaths: allReportPaths, expectation: markdownExpectation(BRAINSTORM_HEADINGS) }));
 		await staging.write("synthesis.md", synthesis.content!);
 		try {
 			validateSynthesisCoverage(synthesis.content!, allReportPaths);
@@ -1377,7 +1343,7 @@ export class SprintPlannerEngine {
 			this.#reportStandaloneValidationFailure(error, staging.runDirectory);
 			throw error;
 		}
-		const redTeam = await this.#standaloneCall(this.#request(options, { id: `${options.id}-red-team`, role: "brainstorm red team", model: agents.brainstormRedTeam.model, mode: "planning", prompt: redTeamPrompt(synthesis.content!), contextPaths: ["synthesis.md"], expectation: markdownExpectation(BRAINSTORM_HEADINGS) }));
+		const redTeam = await this.#standaloneCall(this.#request(options, { id: `${options.id}-red-team`, role: "brainstorm red team", model: agents.brainstormRedTeam.model, mode: "planning", prompt: redTeamPrompt(synthesis.content!, reports), contextPaths: [...allReportPaths, "synthesis.md"], expectation: markdownExpectation(BRAINSTORM_HEADINGS) }));
 		await staging.write("red-team.md", redTeam.content!);
 		const finalPaths = [...allReportPaths, "synthesis.md", "red-team.md"];
 		const publication = await publishDirectoryExclusively(parent, options.id, await readStagedFiles(staging, "", finalPaths));
