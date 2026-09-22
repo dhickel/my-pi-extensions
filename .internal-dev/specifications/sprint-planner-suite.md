@@ -46,21 +46,24 @@ All extension model tuples are exact:
 
 | Responsibility | Provider/model | Thinking |
 | --- | --- | --- |
-| Brainstorm role routing | `openai-codex/gpt-5.6-luna` | `xhigh` |
-| Brainstorm worker 1 (findings) | `openai-codex/gpt-5.6-luna` | `max` |
+| Brainstorm role routing | `openai-codex/gpt-6-luna` | `xhigh` |
+| Brainstorm worker 1 (findings) | `openai-codex/gpt-6-luna` | `max` |
 | Brainstorm worker 2 (findings) | `deepseek/deepseek-v4-flash` | `max` |
-| Brainstorm synthesis | `openai-codex/gpt-5.6-luna` | `xhigh` |
+| Brainstorm synthesis | `openai-codex/gpt-6-luna` | `xhigh` |
 | Brainstorm red team | `openai-codex/gpt-6-astra` | `high` |
 | Red-team validation | `openai-codex/gpt-6-astra` | `high` |
-| Ironout author / corrective reviewer | `openai-codex/gpt-6-astra` / `openai-codex/gpt-5.6-luna` | `high` / `xhigh` |
+| Ironout author / corrective reviewer | `openai-codex/gpt-6-astra` / `openai-codex/gpt-6-luna` | `high` / `xhigh` |
 | Advanced planner / adviser | `openai-codex/gpt-6-astra` | `high` / `max` |
-| Advanced decomposition, concepts, orchestration, and phase reviewers | `openai-codex/gpt-5.6-luna` | `xhigh` |
+| Advanced decomposition, concepts, orchestration, and phase reviewers | `openai-codex/gpt-6-luna` | `xhigh` |
+| Basic implementation | `openai-codex/gpt-6-luna` | `high` |
+| Advanced implementation | `openai-codex/gpt-6-luna` | `max` |
+| Senior-agent base | `openai-codex/gpt-6-sol` | `high` |
 
 Unavailable models, authentication, or thinking capabilities are errors; the runner does not substitute or clamp them. Every extension child receives planning-mode read-only project tools. Advanced planners retain a bounded advisory tool; no child receives coding tools or a toolchain-blocker tool.
 
 ## Brainstorm Contract
 
-Role routing produces exactly 3 complementary domains. Two workers explore every domain independently — worker 1 at `openai-codex/gpt-5.6-luna:max` and worker 2 at `deepseek-v4-flash:max` — for six `worker-1.md` / `worker-2.md` findings. Synthesis cannot start until every domain has both worker findings. The synthesis condenses all findings and explicitly records where the workers differ in opinion; the red team then reviews every raw finding plus the synthesis, picks the best path on disagreements, checks for undersights and oversights (specification creep, over-abstraction, and vital omissions are all failures), and solves each oversight it finds rather than only flagging it.
+Role routing produces exactly 3 complementary domains. Two workers explore every domain independently — worker 1 at `openai-codex/gpt-6-luna:max` and worker 2 at `deepseek-v4-flash:max` — for six `worker-1.md` / `worker-2.md` findings. Synthesis cannot start until every domain has both worker findings. The synthesis condenses all findings and explicitly records where the workers differ in opinion; the red team then reviews every raw finding plus the synthesis, picks the best path on disagreements, checks for undersights and oversights (specification creep, over-abstraction, and vital omissions are all failures), and solves each oversight it finds rather than only flagging it.
 
 Brainstorming produces implementation approaches for the user's directive. Approaches may include some quality-of-life and supporting features that genuinely serve the directive, but they must not balloon or expand scope: workers tighten and refine the request while weighing options and concerns, and avoid out-of-domain features and work.
 
@@ -80,7 +83,7 @@ Each unsplit phase groups cohesive edits by targets, domain, or vertical logic a
 
 `orchestration.md` owns the complete phase ledger in phase order, dependencies, canonical write targets, goals, contiguous sequential or parallel waves, exact implementation and validation tuples, the post-phase review-and-repair PASS gate, and final-integration metadata. Every phase appears exactly once in the ledger and waves; dependencies run in earlier waves, and parallel members have non-overlapping targets.
 
-Corrective review runs in the fixed sequence decomposition → concepts → orchestration → each phase, using one `openai-codex/gpt-5.6-luna:xhigh` call per component from the loaded configuration. A phase reviewer receives corrected concepts, corrected orchestration, its phase, and the phase-name index. Reviewers return complete replacements and do not add, remove, split, or merge phase files. Semantic validation occurs inside each component's retry boundary before checkpoint completion; resume semantically revalidates hash-valid completed planning components and invalidates the first bad component plus downstream work.
+Corrective review runs in the fixed sequence decomposition → concepts → orchestration → each phase, using one `openai-codex/gpt-6-luna:xhigh` call per component from the loaded configuration. A phase reviewer receives corrected concepts, corrected orchestration, its phase, and the phase-name index. Reviewers return complete replacements and do not add, remove, split, or merge phase files. Semantic validation occurs inside each component's retry boundary before checkpoint completion; resume semantically revalidates hash-valid completed planning components and invalidates the first bad component plus downstream work.
 
 Authoring and corrective-review prompts instruct models not to include human implementation time, duration, effort, ETA, target-date, or calendar-schedule estimates because plans describe what to do, not how long it takes. This guidance is instruction-only: deterministic validators do not scan output wording or reject durations. Technical machine timing such as timeout, TTL, retry, backoff, polling, cache retention, and lease values remains valid, as do complexity notation and operational wave language.
 
@@ -94,7 +97,7 @@ The `orchestrate` skill interprets an authoritative user workflow, raw task, che
 
 A generated plan's validated `orchestration.md` is authoritative. The skill follows its waves exactly and blocks an unsafe or uncertain declared parallel wave rather than silently serializing, rescheduling, or inventing another topology. The four-agent cap may split a declared wave into bounded implementation and validation batches; all implementation batches settle before validation begins, the logical wave remains incomplete until every phase passes, and no dependent starts across that barrier.
 
-Advanced planning resolves the loaded configuration and hard-codes the model contract into each generated plan. The skill consumes the plan-owned contract: `basicImplementer` for `basic`-labelled phases, `advancedImplementer` for `advanced`-labelled phases, and the plan's validation tuple for every phase validator and final integration. Only when the authoritative input carries no validated model assignments — raw prose, checklists, pasted legacy plans, or single plan files — does the skill fall back to the active configuration's `basicImplementer`, `advancedImplementer`, `phaseValidator`, and `seniorAgent` assignments.
+Advanced planning resolves the loaded configuration and hard-codes the model contract into each generated plan. The skill consumes the plan-owned contract: `basicImplementer` for `basic`-labelled phases, `advancedImplementer` for `advanced`-labelled phases, and the plan's validation tuple for every phase validator and final integration. Only when the authoritative input carries no validated model assignments — raw prose, checklists, pasted legacy plans, or single plan files — does the skill fall back to the active configuration's `basicImplementer`, `advancedImplementer`, `phaseValidator`, and `seniorAgent` assignments. The active `seniorAgent` base assignment is `openai-codex/gpt-6-sol:high`. The senior-agent skill uses high on its first pass, xhigh on its second, and may switch to `openai-codex/gpt-6-astra:xhigh` on a third attempt or for a hard problem with repeated evidenced failures. A user may explicitly request another senior model; that override takes precedence for the senior delegation without changing the active configuration.
 
 The skill requires Pi's subagent spawn, poll, status, and cancel tools. Before edits, one atomic spawn batch preflights every distinct assigned implementation tuple plus the plan-owned validation tuple with no-op agents. Missing models, authentication, tools, thinking support, or an unreadable configuration stop execution; the skill never substitutes another tuple. One unsplit phase maps to one implementation-agent session at its validated plan assignment. A phase with explicit lettered subphases maps each subphase to one sequential session at the parent phase's assignment in letter order; no runtime token calculation or enforcement is performed.
 

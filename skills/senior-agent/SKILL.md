@@ -1,9 +1,9 @@
 ---
 name: senior-agent
-description: Use this skill to escalate difficult engineering work to a senior engineer subagent when the current agent is stuck, a bug or failed implementation resists normal debugging, architectural or design concerns need diagnosis, or an implementation, repair, or review needs expert completion. Resolves the senior model tuple from the loaded sprint-planner agent configuration (the `seniorAgent` assignment) and escalates thinking to the next higher level after any failed pass. Do not use for routine work or ordinary parallelization.
-compatibility: Requires Pi with the subagent_spawn, subagent_poll, and subagent_status tools, a readable sprint-planner extension configuration (configs/index.ts plus the active configuration file) with a `seniorAgent` assignment, and reasoning support at the resolved thinking level (escalating up to max). A direct subagent caller must have been launched with allowSubagents enabled.
+description: Use this skill to escalate difficult engineering work to a senior engineer subagent when the current agent is stuck, a bug or failed implementation resists normal debugging, architectural or design concerns need diagnosis, or an implementation, repair, or review needs expert completion. Starts at high thinking, steps to xhigh, and may switch to GPT-6 Astra xhigh on the third attempt or after repeated hard-problem failures. An explicit user-requested senior model override is honored. Do not use for routine work or ordinary parallelization.
+compatibility: Requires Pi with the subagent_spawn, subagent_poll, and subagent_status tools, a readable sprint-planner extension configuration (configs/index.ts plus the active configuration file) with a `seniorAgent` assignment, and reasoning support at high and xhigh. A direct subagent caller must have been launched with allowSubagents enabled.
 metadata:
-  version: "3.2.0"
+  version: "3.3.0"
 ---
 
 # Senior Agent
@@ -12,7 +12,7 @@ Escalate a difficult engineering problem to one focused senior engineer. The sen
 
 ## Non-negotiable execution contract
 
-Do not perform the senior escalation in the caller's own model context. Always launch it with `subagent_spawn` using the tuple resolved from the sprint-planner agent configuration. This document contains no authoritative model tuple; the configuration is the single source of truth. Never inherit a caller model, reuse a tuple from a previous run, or accept a tuple from the user prompt as a substitute for resolving the configuration.
+Do not perform the senior escalation in the caller's own model context. Always launch it with `subagent_spawn`. Resolve the base tuple from the sprint-planner agent configuration before considering escalation or an explicit user override. Never inherit a caller model or reuse a tuple from a previous run. The only permitted departures from the configured model are the third-pass/hard-problem Astra escalation defined below and a model override explicitly requested by the user.
 
 ### Mandatory resolution steps
 
@@ -24,18 +24,19 @@ Resolve the active configuration before every senior escalation:
 4. Convert the resolved tuple to spawn fields: `provider`, `model`, and `thinkingLevel` (the configuration's `thinking` value maps directly to `thinkingLevel`).
 5. If the configuration cannot be read, the active name is missing, or the `seniorAgent` assignment is absent, stop and report the exact failure.
 
-These values must never be inherited, omitted, downgraded, or replaced. The resolved provider and model stay fixed for every pass; only the thinking level escalates.
+The selected tuple must never be inherited, omitted, or silently downgraded. Apply the following precedence: an explicit user-requested senior model override, then the automatic Astra escalation rule, then the configured `seniorAgent` provider/model. A user override must identify a provider and model available to `subagent_spawn`; it remains selected for all attempts unless the user requests another override. It changes only the senior delegation, never the active sprint-planner configuration.
 
-### Thinking-level escalation
+### Thinking and model escalation
 
-Launch the first pass at the resolved thinking level. If a pass fails to resolve the issue, or the blocker has survived a prior senior-agent pass, relaunch with the next higher thinking level for the next pass:
+Use this fixed attempt policy:
 
-- `high` → `xhigh` → `max`, never exceeding `max`;
-- if the resolved thinking level is already `max`, subsequent passes remain at `max`.
+1. First pass: selected provider/model at `high`.
+2. Second pass after failure: the same selected provider/model at `xhigh`.
+3. Third pass after two failed attempts: `openai-codex/gpt-6-astra` at `xhigh`.
 
-Do not start an escalation at a level higher than the resolved thinking level on the first pass. The provider and model never change across passes; escalation is a thinking-level step only.
+For a hard problem that already has repeated, evidenced failures before this skill is invoked, the caller may apply the third-pass route immediately. Do not classify ordinary complexity or a single failed attempt as repeated failure. When the user explicitly requests a senior model override, that provider/model takes precedence over the automatic Astra switch; thinking still starts at `high` and steps to `xhigh` after failure unless the user explicitly requests a supported thinking level too.
 
-If `subagent_spawn` or `subagent_poll` is unavailable, or the required model, authentication, or thinking level is rejected, do not emulate the senior agent with another model. Report that the escalation could not run and include the concrete failure. When the caller is itself a direct subagent, these controls are available only if the root explicitly launched it with `allowSubagents: true`. Senior escalation agents must also be launched with `allowSubagents: true` so they can spawn one bounded nested delegation layer when useful; any subagent they spawn must not receive further subagent controls.
+Do not add a fourth automatic attempt. If the third pass remains unresolved, report the evidence and blocker. If `subagent_spawn` or `subagent_poll` is unavailable, or the selected model, authentication, or thinking level is rejected, do not emulate the senior agent with an unapproved model. Report that the escalation could not run and include the concrete failure. When the caller is itself a direct subagent, these controls are available only if the root explicitly launched it with `allowSubagents: true`. Senior escalation agents must also be launched with `allowSubagents: true` so they can spawn one bounded nested delegation layer when useful; any subagent they spawn must not receive further subagent controls.
 
 ## Exact tool policy
 
@@ -85,7 +86,7 @@ Do not paste large files when the senior agent can inspect them directly. Point 
 
 ## Launch
 
-Choose a short, descriptive name that has not been used in the current root session. Spawn one senior agent by default. Substitute the resolved `seniorAgent` tuple for every placeholder; on an escalation pass, raise `thinkingLevel` one step above the resolved level (Thinking-level escalation).
+Choose a short, descriptive name that has not been used in the current root session. Spawn one senior agent by default. Substitute the provider, model, and thinking level selected by the precedence and attempt rules above for every placeholder.
 
 **Advisory** (diagnose, review, recommend):
 
@@ -95,9 +96,9 @@ Choose a short, descriptive name that has not been used in the current root sess
     {
       "name": "senior-<unique-scope>",
       "task": "<complete escalation brief>",
-      "provider": "<resolved-senior-provider>",
-      "model": "<resolved-senior-model>",
-      "thinkingLevel": "<resolved-senior-thinking>",
+      "provider": "<selected-senior-provider>",
+      "model": "<selected-senior-model>",
+      "thinkingLevel": "<selected-senior-thinking>",
       "tools": ["read"],
       "allowSubagents": true
     }
@@ -113,9 +114,9 @@ Choose a short, descriptive name that has not been used in the current root sess
     {
       "name": "senior-<unique-scope>",
       "task": "<complete escalation brief with explicit edit authority>",
-      "provider": "<resolved-senior-provider>",
-      "model": "<resolved-senior-model>",
-      "thinkingLevel": "<resolved-senior-thinking>",
+      "provider": "<selected-senior-provider>",
+      "model": "<selected-senior-model>",
+      "thinkingLevel": "<selected-senior-thinking>",
       "tools": ["read", "bash", "edit", "write"],
       "allowSubagents": true
     }
@@ -158,8 +159,8 @@ Invalid or stale cursors, digest mismatch, or byte-count mismatch block that evi
 
 When the result arrives (direct or reconstructed):
 
-1. Confirm the reported provider and model match the resolved `seniorAgent` assignment, and the thinking level is the resolved level or one escalated step above it (higher thinking after a failed pass).
+1. Confirm the reported provider, model, and thinking level match the selected route for that attempt, including any explicit user override or third-pass Astra escalation.
 2. Review the diagnosis and inspect any edits; do not accept them blindly.
 3. Run or confirm the relevant validation in the caller context when practical.
 4. Continue implementation using the senior result, or report its findings, evidence, edits, risks, and remaining blockers to the user.
-5. If the run failed or did not resolve the issue, escalate the thinking level one step and relaunch (Thinking-level escalation); never fall back to another model. If the ladder is exhausted (already at `max`) and the issue remains unresolved, report the failure and the remaining blocker to the user.
+5. If the run failed or did not resolve the issue, apply the next attempt in the fixed escalation policy. After an unresolved third pass, report the failure and remaining blocker; do not invent another fallback.

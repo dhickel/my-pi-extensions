@@ -18,15 +18,16 @@ export interface ModelTuple {
 
 /** Reusable exact tuples; agent assignments below select from this catalog. */
 export const MODEL_PROFILES = {
-	solHigh: { provider: "openai-codex", model: "gpt-5.6-sol", thinking: "high" },
-	solMedium: { provider: "openai-codex", model: "gpt-5.6-sol", thinking: "medium" },
-	solMax: { provider: "openai-codex", model: "gpt-5.6-sol", thinking: "max" },
+	gpt6SolHigh: { provider: "openai-codex", model: "gpt-6-sol", thinking: "high" },
+	gpt6SolMedium: { provider: "openai-codex", model: "gpt-6-sol", thinking: "medium" },
+	gpt6SolMax: { provider: "openai-codex", model: "gpt-6-sol", thinking: "max" },
 	terraHigh: { provider: "openai-codex", model: "gpt-5.6-terra", thinking: "high" },
-	lunaXhigh: { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "xhigh" },
-	lunaHigh: { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "high" },
-	lunaMax: { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "max" },
+	gpt6LunaXhigh: { provider: "openai-codex", model: "gpt-6-luna", thinking: "xhigh" },
+	gpt6LunaHigh: { provider: "openai-codex", model: "gpt-6-luna", thinking: "high" },
+	gpt6LunaMax: { provider: "openai-codex", model: "gpt-6-luna", thinking: "max" },
 	astraMedium: { provider: "openai-codex", model: "gpt-6-astra", thinking: "medium" },
 	astraHigh: { provider: "openai-codex", model: "gpt-6-astra", thinking: "high" },
+	astraXhigh: { provider: "openai-codex", model: "gpt-6-astra", thinking: "xhigh" },
 	astraMax: { provider: "openai-codex", model: "gpt-6-astra", thinking: "max" },
 	// Retained for active assignments, label translation, and legacy record parsing.
 	deepseekProMax: { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" },

@@ -1,7 +1,7 @@
 ---
 name: image-viewing
-description: Delegates image inspection to openai-codex/gpt-5.6-sol at medium reasoning and returns a detailed, request-focused visual summary. Use only when image analysis is required and the current model is known not to support image input; never use when the current model can view images or when its capability is merely uncertain.
-compatibility: Requires Pi with the read, subagent_spawn, subagent_poll, and subagent_status tools, configured authentication for openai-codex/gpt-5.6-sol, medium reasoning support, and each image available to the child as a readable local file.
+description: Delegates image inspection to openai-codex/gpt-6-sol at medium reasoning and returns a detailed, request-focused visual summary. Use only when image analysis is required and the current model is known not to support image input; never use when the current model can view images or when its capability is merely uncertain.
+compatibility: Requires Pi with the read, subagent_spawn, subagent_poll, and subagent_status tools, configured authentication for openai-codex/gpt-6-sol, medium reasoning support, and each image available to the child as a readable local file.
 metadata:
   version: "2.1.0"
 ---
@@ -34,7 +34,7 @@ The vision subagent receives no caller transcript or prior attachments. Every im
 Always launch exactly one subagent with `subagent_spawn` using:
 
 - `provider`: `openai-codex`
-- `model`: `gpt-5.6-sol`
+- `model`: `gpt-6-sol`
 - `thinkingLevel`: `medium`
 
 Never inherit, omit, downgrade, or replace these values. Do not attempt the visual analysis in the caller's non-vision context.
@@ -99,7 +99,7 @@ Choose a short, unique subagent name such as `vision-<scope>` and launch:
       "name": "vision-<unique-scope>",
       "task": "<complete visual-analysis task>",
       "provider": "openai-codex",
-      "model": "gpt-5.6-sol",
+      "model": "gpt-6-sol",
       "thinkingLevel": "medium",
       "tools": ["read"]
     }
@@ -125,7 +125,7 @@ Invalid or stale cursors, digest mismatch, or byte-count mismatch block that evi
 
 When the result arrives (direct or reconstructed):
 
-1. Confirm the reported provider, model, and thinking level are `openai-codex`, `gpt-5.6-sol`, and `medium`.
+1. Confirm the reported provider, model, and thinking level are `openai-codex`, `gpt-6-sol`, and `medium`.
 2. Return the subagent's requested description or findings clearly and preserve its uncertainty qualifiers.
 3. Do not add visual claims that the subagent did not report.
 4. If useful, organize the returned material for readability without changing its meaning.

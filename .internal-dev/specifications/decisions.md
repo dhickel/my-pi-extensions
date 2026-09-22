@@ -2,6 +2,66 @@
 
 Record accepted decisions, justification, alternatives, caveats, affected specifications, source, and review timing.
 
+## 2026-09-19 — Advanced implementation returns to Luna
+
+- Decision: the active `default` sprint-planner configuration assigns basic implementation to `openai-codex/gpt-5.6-luna:high` and advanced implementation to `openai-codex/gpt-5.6-luna:max`.
+- Justification: user direction to return advanced implementation to Luna max while retaining Luna high for basic implementation.
+- Alternative and tradeoff: the immediately preceding DeepSeek V4 Pro max assignment is superseded; one provider family simplifies active implementation routing.
+- Caveat: validated plans and execution records with frozen older tuples retain their historical assignments. New plans and configuration fallbacks use the updated advanced route.
+- Affected specification: `sprint-planner-suite.md`; `sprint-planner/configs/default.ts`, package documentation, and model-route tests.
+- Source: user direction on 2026-09-19.
+- Review timing: when the active implementation model routes change.
+
+## 2026-09-19 — Advanced implementation returns to DeepSeek V4 Pro
+
+- Decision: the active `default` sprint-planner configuration assigns basic implementation to `openai-codex/gpt-5.6-luna:high` and advanced implementation to `deepseek/deepseek-v4-pro:max`.
+- Justification: user direction to restore DeepSeek V4 Pro for advanced implementation while retaining Luna high for basic implementation.
+- Alternative and tradeoff: the immediately preceding advanced Luna max assignment is superseded; DeepSeek remains the selected advanced route and preserves the prior advanced implementation provider.
+- Caveat: validated plans and execution records with frozen older tuples retain their historical assignments. New plans and configuration fallbacks use the updated advanced route.
+- Affected specification: `sprint-planner-suite.md`; `sprint-planner/configs/default.ts`, package documentation, and model-route tests.
+- Source: user direction on 2026-09-19.
+- Review timing: when the active implementation model routes change.
+
+## 2026-09-19 — Implementation routes use Luna tiers
+
+- Decision: the active `default` sprint-planner configuration assigns both implementation profiles to `openai-codex/gpt-5.6-luna`: basic implementation at `high` thinking and advanced implementation at `max` thinking.
+- Justification: user direction to use Luna for both implementation routes with a lower reasoning tier for routine work and maximum reasoning for advanced work.
+- Alternative and tradeoff: the prior basic Luna `xhigh` and advanced DeepSeek V4 Pro `max` assignments are superseded; using one provider family simplifies the active implementation route while changing the cost and capability balance of advanced work.
+- Caveat: validated plans and execution records with frozen older tuples retain those historical assignments. New plans and configuration fallbacks use the updated routes.
+- Affected specification: `sprint-planner-suite.md`; `sprint-planner/configs/default.ts`, package documentation, and model-route tests.
+- Source: user direction on 2026-09-19.
+- Review timing: when the active implementation model routes change.
+
+## 2026-09-09 — Implementation routes and senior escalation ladder
+
+- Decision: the active default assigns basic implementation to `openai-codex/gpt-5.6-luna:xhigh`, advanced implementation to `deepseek/deepseek-v4-pro:max`, and the senior-agent base to `openai-codex/gpt-5.6-sol:high`. Senior escalation uses high on pass one, xhigh on pass two, and may switch to `openai-codex/gpt-6-astra:xhigh` on pass three or for an already hard blocker with repeated evidenced failures. An explicit user-requested senior model override takes precedence without changing the active configuration.
+- Justification: direct user selection of implementation models and a bounded senior escalation policy that permits a stronger model only after repeated failure or explicit user direction.
+- Alternative and tradeoff: retain the Terra advanced-implementation route or the open-ended same-model thinking ladder (rejected by user direction). A fixed three-pass policy is more predictable but provides no automatic fourth attempt.
+- Caveat: validated plans and execution records with frozen older tuples retain those historical assignments. User overrides apply only to senior delegations and must name an available provider/model.
+- Affected specification: `sprint-planner-suite.md`; model configuration, senior-agent skill, package documentation, and contract tests.
+- Source: user direction on 2026-09-09.
+- Review timing: when implementation routing or senior escalation policy changes.
+
+## 2026-09-07 — Senior agent returns to GPT-5.6 Sol medium
+
+- Decision: the active `default` sprint-planner configuration assigns `seniorAgent` to `MODEL_PROFILES.solMedium` (`openai-codex/gpt-5.6-sol:medium`), superseding only the senior-agent portion of the 2026-09-05 Astra migration decision. Other Astra, Luna, and DeepSeek assignments remain unchanged. The senior-agent skill continues to resolve the tuple from configuration and contains no authoritative inline model tuple.
+- Justification: user direction to move senior escalation off GPT-6 Astra and back to GPT-5.6 Sol while keeping the configuration as the single source of truth.
+- Alternative and tradeoff: inline Sol directly in the senior-agent skill (rejected: that would duplicate and potentially drift from the active configuration).
+- Caveat: previously persisted plans and execution records retain their frozen tuples; the change affects newly resolved senior escalations.
+- Affected specification: `sprint-planner-suite.md`; `sprint-planner/configs/default.ts`, `sprint-planner/AGENTS.md`, `sprint-planner/README.md`, and model-route tests.
+- Source: user direction on 2026-09-07.
+- Review timing: when the active model configuration or senior-agent routing contract changes.
+
+## 2026-09-05 — Toast-It uses fixed generic tools with on-demand discovery
+
+- Decision: the private Toast-It package exposes catalog/schema discovery, exact-name generic calls, one-shot approval status, and health. It does not dynamically register per-domain wrappers or require startup networking. Each call verifies its name against fresh discovery; the server validates arguments and policy.
+- Justification: the complete server catalog remains callable without stale hard-coded schemas, startup availability requirements, or provider-specific dynamic registration behavior.
+- Alternative and tradeoff: typed dynamic wrappers offer richer native schemas but introduce lifecycle and provider compatibility work. The chosen interface costs an explicit schema-discovery step and one preflight GET per invocation.
+- Caveat: approvals execute only in Toast-It UI; errors after dispatch may leave mutations ambiguous. No automatic retry or indefinite polling is permitted. Credential and output limits are enforced locally; no raw result archive is written.
+- Affected specification: `toast-it-extension.md`; package `toast-it/`.
+- Source: user's sibling-workspace-only Toast-It Pi integration directive, 2026-09-05.
+- Review timing: when the Toast-It v1 contract or Pi tool-schema lifecycle changes.
+
 ## 2026-09-05 — Job plans require corrective red-team PASS before publication
 
 - Decision: every complete Job Planner candidate is reviewed section-by-section by the configured `redTeamValidator` before publication. The validator applies safely inferable corrections and returns heavy contradictions, missing authority, or insufficient context as a typed unresolved-issue handoff. The root planning agent must record exact user-answer evidence, ask through the existing question tools, and resubmit until every prior issue is explicitly reconciled and the validator returns PASS; only the validator's corrected passing plan may be published.

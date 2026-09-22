@@ -27,7 +27,7 @@ Jogging is not a background pipeline, a Sprint Planner workflow, or an advanced-
 
 For broader inspection — architecture maps, behavior searches, API and data-flow overviews, docs/tests/spec synthesis, or summaries across many files — load and follow the installed `exploration` skill instead of reading every file into root context.
 
-- Every exploration subagent must be launched with the exploration skill's exact fixed contract: `provider: "openai-codex"`, `model: "gpt-5.6-luna"`, `thinkingLevel: "high"`, `tools: ["read", "bash"]`. Never inherit, omit, downgrade, clamp, or substitute these values.
+- Every exploration subagent must be launched with the exploration skill's exact fixed contract: `provider: "openai-codex"`, `model: "gpt-6-luna"`, `thinkingLevel: "high"`, `tools: ["read", "bash"]`. Never inherit, omit, downgrade, clamp, or substitute these values.
 - Exploration agents are read-only and never receive edit, write, subagent, sprint, or user-questioning tools. If the exploration skill or its exact contract is unavailable, do not emulate it with another model; report the blocker and proceed with ordinary root inspection.
 - Exploration summaries are orientation aids. Read critical files directly before editing based on a finding, validating a diagnosis, or resolving contradictions between reports.
 - Poll every exploration agent to a terminal state before relying on its report.
@@ -86,7 +86,7 @@ Every completed implementation domain passes a validator review before its phase
 
 ### Validator tuple
 
-- Resolve from the loaded sprint-planner agent configuration exactly like the implementer tuples (the same mandatory resolution steps): take `MODEL_PROFILES.lunaXhigh` (currently `openai-codex` / `gpt-5.6-luna` / thinking `xhigh`). Never hardcode, inherit, downgrade, or substitute; if the profile cannot be resolved, report the exact failure and pause the domain gate.
+- Resolve from the loaded sprint-planner agent configuration exactly like the implementer tuples (the same mandatory resolution steps): take `MODEL_PROFILES.gpt6LunaXhigh` (currently `openai-codex` / `gpt-6-luna` / thinking `xhigh`). Never hardcode, inherit, downgrade, or substitute; if the profile cannot be resolved, report the exact failure and pause the domain gate.
 - Spawn contract: `tools: ["read", "bash"]` only (read-only; `mvn` test runs that write under `target/` are acceptable), `allowSubagents: false`, name `validate-<domain>-<unique>`.
 
 ### Brief and verdict
@@ -222,7 +222,7 @@ After every completed domain holds a PASS verdict from the luna validation loop 
 
 ### Fixed tuple
 
-- Final-pass contract: `provider: "openai-codex"`, `model: "gpt-5.6-sol"`, `thinkingLevel: "medium"`. Never inherit, omit, downgrade, clamp, or substitute these values. If the tuple is unavailable, report the exact failure and do not claim completion.
+- Final-pass contract: `provider: "openai-codex"`, `model: "gpt-6-sol"`, `thinkingLevel: "medium"`. Never inherit, omit, downgrade, clamp, or substitute these values. If the tuple is unavailable, report the exact failure and do not claim completion.
 - Spawn contract: `tools: ["read", "bash"]` only (read-only; `mvn` test runs that write under `target/` are acceptable), `allowSubagents: false`, name `final-review-<unique>`.
 
 ### Brief and verdict

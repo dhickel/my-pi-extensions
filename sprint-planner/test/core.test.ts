@@ -134,9 +134,9 @@ function orchestrationFor(size: "small" | "medium" | "large" | "extra-large", ph
 		"",
 		"## Model Assignments",
 		"",
-		"- Basic Implementer: openai-codex/gpt-5.6-luna:high",
-		"- Advanced Implementer: openai-codex/gpt-5.6-luna:max",
-		"- Validation: openai-codex/gpt-5.6-luna:xhigh",
+		"- Basic Implementer: openai-codex/gpt-6-luna:high",
+		"- Advanced Implementer: openai-codex/gpt-6-luna:max",
+		"- Validation: openai-codex/gpt-6-luna:xhigh",
 		...phasePaths.map((phasePath, index) => `- ${phasePath}: ${index === phasePaths.length - 1 ? "basic" : "advanced"}`),
 		"- Implementers: exactly one assigned implementation agent per unsplit phase, or one sequential assigned agent per lettered subphase for split phases",
 		"",
@@ -147,7 +147,7 @@ function orchestrationFor(size: "small" | "medium" | "large" | "extra-large", ph
 		"",
 		"## Final Integration",
 		"",
-		"- Integration: after all phases PASS, run final integration validation with openai-codex/gpt-5.6-luna:xhigh.",
+		"- Integration: after all phases PASS, run final integration validation with openai-codex/gpt-6-luna:xhigh.",
 		"",
 	].join("\n");
 }
@@ -302,37 +302,39 @@ test("agent configuration covers every sprint-planner role with exact tuples", (
 		"integrationValidator",
 		"seniorAgent",
 	]);
-	// Model tuples: the prior Sol routes use Astra; other active routes are unchanged.
+	// All former GPT-5.6 Luna/Sol assignments use their GPT-6 equivalents; Astra and DeepSeek routes are unchanged.
 	for (const entry of Object.values(agents)) {
 		const m = entry.model;
 		if (m.model === "deepseek-v4-pro") assert.deepEqual(m, { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" });
 		else if (m.model === "deepseek-v4-flash") assert.deepEqual(m, { provider: "deepseek", model: "deepseek-v4-flash", thinking: "max" });
-		else if (m.model === "gpt-5.6-luna") assert.deepEqual(m, { provider: "openai-codex", model: "gpt-5.6-luna", thinking: m.thinking });
+		else if (m.model === "gpt-6-luna") assert.deepEqual(m, { provider: "openai-codex", model: "gpt-6-luna", thinking: m.thinking });
+		else if (m.model === "gpt-5.6-terra") assert.deepEqual(m, { provider: "openai-codex", model: "gpt-5.6-terra", thinking: m.thinking });
+		else if (m.model === "gpt-6-sol") assert.deepEqual(m, { provider: "openai-codex", model: "gpt-6-sol", thinking: m.thinking });
 		else assert.deepEqual(m, { provider: "openai-codex", model: "gpt-6-astra", thinking: m.thinking });
 	}
-	assert.deepEqual(agents.roleRouter.model, { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "xhigh" });
-	assert.deepEqual(agents.brainstormSynthesis.model, { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "xhigh" });
+	assert.deepEqual(agents.roleRouter.model, { provider: "openai-codex", model: "gpt-6-luna", thinking: "xhigh" });
+	assert.deepEqual(agents.brainstormSynthesis.model, { provider: "openai-codex", model: "gpt-6-luna", thinking: "xhigh" });
 	for (const key of ["phaseValidator", "integrationValidator"] as const) {
-		assert.deepEqual(agents[key].model, { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "xhigh" });
+		assert.deepEqual(agents[key].model, { provider: "openai-codex", model: "gpt-6-luna", thinking: "xhigh" });
 	}
-	assert.deepEqual(agents.ironoutReviewer.model, { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "xhigh" });
+	assert.deepEqual(agents.ironoutReviewer.model, { provider: "openai-codex", model: "gpt-6-luna", thinking: "xhigh" });
 	// Assignments with senior-call metadata
 	assert.deepEqual(agents.planner, { model: { provider: "openai-codex", model: "gpt-6-astra", thinking: "high" }, maxSeniorCalls: 2, seniorAdvisor: "advisor" });
 	assert.deepEqual(agents.advisor, { model: { provider: "openai-codex", model: "gpt-6-astra", thinking: "max" } });
-	assert.deepEqual(agents.decompositionReviewer, { model: { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "xhigh" }, maxSeniorCalls: 1, seniorAdvisor: "advisor" });
+	assert.deepEqual(agents.decompositionReviewer, { model: { provider: "openai-codex", model: "gpt-6-luna", thinking: "xhigh" }, maxSeniorCalls: 1, seniorAdvisor: "advisor" });
 	for (const agent of [agents.conceptsReviewer, agents.orchestrationReviewer, agents.phaseReviewer]) {
-		assert.deepEqual(agent, { model: { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "xhigh" } });
+		assert.deepEqual(agent, { model: { provider: "openai-codex", model: "gpt-6-luna", thinking: "xhigh" } });
 	}
 	// Simple model-only assignments
 	for (const key of ["roleRouter", "brainstormWorker1", "brainstormWorker2", "brainstormSynthesis", "brainstormRedTeam", "redTeamValidator", "ironoutAuthor", "basicImplementer", "advancedImplementer", "phaseValidator", "integrationValidator", "seniorAgent"] as const) {
 		assert.deepEqual(agents[key], { model: agents[key].model });
 	}
-	assert.deepEqual(agents.brainstormWorker1, { model: { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "max" } });
+	assert.deepEqual(agents.brainstormWorker1, { model: { provider: "openai-codex", model: "gpt-6-luna", thinking: "max" } });
 	assert.deepEqual(agents.brainstormWorker2, { model: { provider: "deepseek", model: "deepseek-v4-flash", thinking: "max" } });
 	assert.deepEqual(agents.redTeamValidator, { model: { provider: "openai-codex", model: "gpt-6-astra", thinking: "high" } });
-	assert.deepEqual(agents.seniorAgent, { model: { provider: "openai-codex", model: "gpt-6-astra", thinking: "medium" } });
-	assert.deepEqual(agents.basicImplementer.model, { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "high" });
-	assert.deepEqual(agents.advancedImplementer.model, { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "max" });
+	assert.deepEqual(agents.seniorAgent, { model: { provider: "openai-codex", model: "gpt-6-sol", thinking: "high" } });
+	assert.deepEqual(agents.basicImplementer.model, { provider: "openai-codex", model: "gpt-6-luna", thinking: "high" });
+	assert.deepEqual(agents.advancedImplementer.model, { provider: "openai-codex", model: "gpt-6-luna", thinking: "max" });
 });
 
 test("agent configuration service exposes the configured redTeamValidator tuple", async () => {
@@ -1111,7 +1113,7 @@ test("plan and handoff prompts provide instruction-only time-estimate guidance",
 		redTeamPrompt,
 		synthesisPrompt,
 	} = await import("../prompts.ts");
-	const planPrompt = advancedPlanPrompt("Test handoff", { provider: "deepseek", model: "deepseek-v4-flash", thinking: "max" }, { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" }, { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "xhigh" });
+	const planPrompt = advancedPlanPrompt("Test handoff", { provider: "deepseek", model: "deepseek-v4-flash", thinking: "max" }, { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" }, { provider: "openai-codex", model: "gpt-6-luna", thinking: "xhigh" });
 	assert.match(planPrompt, /4–22 files/);
 	assert.match(planPrompt, /Extra-large: 11–20 phases/);
 	assert.match(planPrompt, /Most sprints should normally land around 5–10 phases/);
@@ -1125,7 +1127,7 @@ test("plan and handoff prompts provide instruction-only time-estimate guidance",
 	assert.match(planPrompt, /Final Integration/);
 	assert.match(planPrompt, /\*\*Size\*\*: small/);
 	assert.match(planPrompt, /deepseek\/deepseek-v4-pro:max/);
-	assert.match(planPrompt, /openai-codex\/gpt-5\.6-luna:xhigh/);
+	assert.match(planPrompt, /openai-codex\/gpt-6-luna:xhigh/);
 	assert.match(planPrompt, /Technical machine semantics.*timeout.*TTL.*retry.*backoff.*polling.*cache.*retention.*lease.*complexity/i);
 	assert.match(planPrompt, /one agent session.*200,000–300,000 tokens/i);
 	assert.match(planPrompt, /lettered subphases \(A, B, C/i);
@@ -1146,10 +1148,10 @@ test("plan and handoff prompts provide instruction-only time-estimate guidance",
 	assert.match(decompositionReview, /without feature creep/i);
 	assert.match(decompositionReview, /speculative, adjacent, optional, or otherwise unrequested features/i);
 
-	const orchReview = advancedOrchestrationReviewPrompt("Handoff", { path: "concepts.md", content: "x" }, { path: "orchestration.md", content: "x" }, ["phase-01-a.md"], { provider: "deepseek", model: "deepseek-v4-flash", thinking: "max" }, { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" }, { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "xhigh" });
+	const orchReview = advancedOrchestrationReviewPrompt("Handoff", { path: "concepts.md", content: "x" }, { path: "orchestration.md", content: "x" }, ["phase-01-a.md"], { provider: "deepseek", model: "deepseek-v4-flash", thinking: "max" }, { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" }, { provider: "openai-codex", model: "gpt-6-luna", thinking: "xhigh" });
 	assert.match(orchReview, /may not add, remove, split, or merge phases/);
 	assert.match(orchReview, /deepseek\/deepseek-v4-pro:max/);
-	assert.match(orchReview, /openai-codex\/gpt-5\.6-luna:xhigh/);
+	assert.match(orchReview, /openai-codex\/gpt-6-luna:xhigh/);
 	assert.match(orchReview, /exactly one basic-or-advanced assignment exists for every phase/);
 	assert.match(orchReview, /PASS gate/);
 	assert.match(orchReview, /one agent session.*200,000–300,000 tokens/i);
@@ -1234,7 +1236,7 @@ test("plan and handoff prompts provide instruction-only time-estimate guidance",
 
 test("prompt enforces scope classification criteria with exact budgets", async () => {
 	const { advancedPlanPrompt } = await import("../prompts.ts");
-	const prompt = advancedPlanPrompt("Test", { provider: "deepseek", model: "deepseek-v4-flash", thinking: "max" }, { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" }, { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "xhigh" });
+	const prompt = advancedPlanPrompt("Test", { provider: "deepseek", model: "deepseek-v4-flash", thinking: "max" }, { provider: "deepseek", model: "deepseek-v4-pro", thinking: "max" }, { provider: "openai-codex", model: "gpt-6-luna", thinking: "xhigh" });
 	assert.match(prompt, /(S|s)mall.*2.{1,5}3/);
 	assert.match(prompt, /(M|m)edium.*3.{1,5}5/);
 	assert.match(prompt, /(L|l)arge.*6.{1,5}10/);
@@ -1529,12 +1531,12 @@ test("orchestration semantics enforce complete ledgers, dependencies, waves, tup
 	assert.throws(() => validateOrchestration(orchestrationSmall.replace(/^- phase-02-second\.md \|.*\n/m, ""), phases), /cover every phase/);
 	assert.throws(() => validateOrchestration(orchestrationSmall.replace("depends: phase-01-first.md", "depends: phase-99-missing.md"), phases), /not a plan phase/);
 	assert.throws(() => validateOrchestration(orchestrationSmall.replace("- wave-01: phase-01-first.md\n- wave-02: phase-02-second.md", "- wave-01: phase-02-second.md\n- wave-02: phase-01-first.md"), phases), /earlier wave/);
-	assert.doesNotThrow(() => validateOrchestration(orchestrationSmall.replace("- Advanced Implementer: openai-codex/gpt-5.6-luna:max", "- Advanced Implementer: openai-codex/gpt-5.6-sol:max"), phases));
+	assert.doesNotThrow(() => validateOrchestration(orchestrationSmall.replace("- Advanced Implementer: openai-codex/gpt-6-luna:max", "- Advanced Implementer: openai-codex/gpt-6-sol:max"), phases));
 	assert.throws(() => validateOrchestration(orchestrationSmall.replace("exactly one assigned implementation agent per unsplit phase, or one sequential assigned agent per lettered subphase for split phases", "two implementation agents per phase"), phases), /Model Assignments.*exact structured/);
 	assert.throws(() => validateOrchestration(orchestrationSmall.replace("- phase-02-second.md: basic\n", ""), phases), /assign.*phase|Model Assignments/i);
 	assert.throws(() => validateOrchestration(orchestrationSmall.replace("- phase-02-second.md: basic", "- phase-02-second.md: routine"), phases), /assign.*phase|Model Assignments/i);
-	assert.throws(() => validateOrchestration(orchestrationSmall.replace("- Basic Implementer: openai-codex/gpt-5.6-luna:high", "- Basic Implementer: openai-codex/gpt-5.6-luna:max"), phases), /must be distinct/);
-	assert.throws(() => validateOrchestration(orchestrationSmall.replace("- Basic Implementer: openai-codex/gpt-5.6-luna:high", "- Basic Implementer: openai-codex/gpt-5.6-luna:xhigh"), phases, {
+	assert.throws(() => validateOrchestration(orchestrationSmall.replace("- Basic Implementer: openai-codex/gpt-6-luna:high", "- Basic Implementer: openai-codex/gpt-6-luna:max"), phases), /must be distinct/);
+	assert.throws(() => validateOrchestration(orchestrationSmall.replace("- Basic Implementer: openai-codex/gpt-6-luna:high", "- Basic Implementer: openai-codex/gpt-6-luna:xhigh"), phases, {
 		basicImplementationModel: SPRINT_PLANNER_AGENT_CONFIGURATIONS.default.basicImplementer.model,
 		advancedImplementationModel: SPRINT_PLANNER_AGENT_CONFIGURATIONS.default.advancedImplementer.model,
 		validationModel: SPRINT_PLANNER_AGENT_CONFIGURATIONS.default.phaseValidator.model,
@@ -1548,7 +1550,7 @@ test("orchestration semantics enforce complete ledgers, dependencies, waves, tup
 		const fencedForeignContent = orchestrationSmall.replace(`## ${heading}\n\n`, `## ${heading}\n\n\`\`\`text\nforeign content\n\`\`\`\n`);
 		assert.throws(() => validateOrchestration(fencedForeignContent, phases), /Orchestration/);
 	}
-	assert.throws(() => validateOrchestration(orchestrationSmall.replace("- Validation: openai-codex/gpt-5.6-luna:xhigh", "    - Validation: openai-codex/gpt-5.6-luna:xhigh"), phases), /Model Assignments.*exact structured/);
+	assert.throws(() => validateOrchestration(orchestrationSmall.replace("- Validation: openai-codex/gpt-6-luna:xhigh", "    - Validation: openai-codex/gpt-6-luna:xhigh"), phases), /Model Assignments.*exact structured/);
 	const parallelOverlap = orchestrationSmall
 		.replace("phase-02-second.md | depends: phase-01-first.md | targets: sprint-planner/target-02.ts", "phase-02-second.md | depends: none | targets: sprint-planner/target-01.ts")
 		.replace("- wave-01: phase-01-first.md\n- wave-02: phase-02-second.md", "- wave-01: phase-01-first.md, phase-02-second.md");
@@ -2305,13 +2307,13 @@ test("ThinkingLevel type contains each level exactly once", () => {
 	assert.ok(levels.has("off") === false); // not used but exists in type
 	assert.ok(levels.has("minimal") === false);
 	assert.ok(levels.has("low") === false);
-	assert.ok(levels.has("medium"));
+	assert.ok(levels.has("medium") === false);
 	assert.ok(levels.has("high"));
 	assert.ok(levels.has("xhigh")); // used by luna profiles (roleRouter, brainstormSynthesis)
 	assert.ok(levels.has("max"));
 	// Verify assignments that use higher reasoning levels.
 	assert.equal(SPRINT_PLANNER_AGENT_CONFIGURATIONS.default.phaseReviewer.model.thinking, "xhigh");
-	assert.equal(SPRINT_PLANNER_AGENT_CONFIGURATIONS.default.seniorAgent.model.thinking, "medium");
+	assert.equal(SPRINT_PLANNER_AGENT_CONFIGURATIONS.default.seniorAgent.model.thinking, "high");
 	// Verify no duplicate medium in union by checking all values are valid
 	for (const entry of Object.values(SPRINT_PLANNER_AGENT_CONFIGURATIONS.default)) {
 		const valid: string[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
@@ -3279,9 +3281,9 @@ async function makeBranchingPlanDir(planDir: string): Promise<void> {
 		"- wave-02: phase-03-third.md",
 		"- wave-03: phase-02-second.md",
 		"", "## Model Assignments", "",
-		"- Basic Implementer: openai-codex/gpt-5.6-luna:high",
-		"- Advanced Implementer: openai-codex/gpt-5.6-luna:max",
-		"- Validation: openai-codex/gpt-5.6-luna:xhigh",
+		"- Basic Implementer: openai-codex/gpt-6-luna:high",
+		"- Advanced Implementer: openai-codex/gpt-6-luna:max",
+		"- Validation: openai-codex/gpt-6-luna:xhigh",
 		"- phase-01-first.md: advanced",
 		"- phase-02-second.md: advanced",
 		"- phase-03-third.md: basic",
@@ -3290,7 +3292,7 @@ async function makeBranchingPlanDir(planDir: string): Promise<void> {
 		"- Gate: post-phase validator review-and-repair must PASS before a phase is complete.",
 		"- Dependencies: no dependent phase starts before every dependency has PASS.",
 		"", "## Final Integration", "",
-		"- Integration: after all phases PASS, run final integration validation with openai-codex/gpt-5.6-luna:xhigh.", "",
+		"- Integration: after all phases PASS, run final integration validation with openai-codex/gpt-6-luna:xhigh.", "",
 	].join("\n");
 	const planFiles = [
 		{ path: "concepts.md", content: concepts },
@@ -3325,11 +3327,11 @@ test("start creates an execution record with frozen source snapshot and revision
 	assert.ok(record!.source.aggregateDigest.length === 64);
 	assert.equal(record!.frozen.phases.length, 2);
 	assert.deepEqual(record!.frozen.phases, ["phase-01-first.md", "phase-02-second.md"]);
-	assert.deepEqual(record!.frozen.basicImplementationModel, { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "high" });
-	assert.deepEqual(record!.frozen.advancedImplementationModel, { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "max" });
+	assert.deepEqual(record!.frozen.basicImplementationModel, { provider: "openai-codex", model: "gpt-6-luna", thinking: "high" });
+	assert.deepEqual(record!.frozen.advancedImplementationModel, { provider: "openai-codex", model: "gpt-6-luna", thinking: "max" });
 	assert.deepEqual(record!.frozen.phaseImplementationModels, {
-		"phase-01-first.md": { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "max" },
-		"phase-02-second.md": { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "high" },
+		"phase-01-first.md": { provider: "openai-codex", model: "gpt-6-luna", thinking: "max" },
+		"phase-02-second.md": { provider: "openai-codex", model: "gpt-6-luna", thinking: "high" },
 	});
 
 	// Manifest exists
@@ -3465,7 +3467,7 @@ test("checkpoint records implementation evidence and increments revision", async
 	const phase1 = record!.phases.find((p) => p.phase === "phase-01-first.md");
 	assert.ok(phase1?.implementation);
 	assert.equal(phase1!.implementation!.report, "Implemented phase 1 successfully.");
-	assert.deepEqual(phase1!.implementation!.agentModel.provider, "openai-codex");
+	assert.deepEqual(phase1!.implementation!.agentModel, { provider: "openai-codex", model: "gpt-6-luna", thinking: "max" });
 
 	await interruptActiveRecord(handle, "Test cleanup.");
 });
@@ -4136,7 +4138,9 @@ test("version 1 execution records remain parseable but reject append operations"
 	await makePlanDir(legacyPlanDir);
 	// v1-era plans froze the legacy validation tuple; keep the fixture independent of the active configuration.
 	const legacyOrchestration = await readFile(path.join(legacyPlanDir, "orchestration.md"), "utf8");
-	await writeFile(path.join(legacyPlanDir, "orchestration.md"), legacyOrchestration.replace(/openai-codex\/gpt-5\.6-luna:xhigh/g, "openai-codex/gpt-5.6-terra:high"));
+	await writeFile(path.join(legacyPlanDir, "orchestration.md"), legacyOrchestration
+		.replace("- Validation: openai-codex/gpt-6-luna:xhigh", "- Validation: openai-codex/gpt-5.6-terra:high")
+		.replace("validation with openai-codex/gpt-6-luna:xhigh", "validation with openai-codex/gpt-5.6-terra:high"));
 	const { handle } = await startExecutionRecord(internal, root, "plans/legacy-readable");
 	let revision = await checkpointExecutionRecord(handle, 0, "implementation", "phase-01-first", undefined, "Legacy implementation.", undefined);
 	revision = await checkpointExecutionRecord(handle, revision, "phase_validation", "phase-01-first", "PASS", "Legacy PASS.", undefined);
@@ -4553,7 +4557,7 @@ async function loadSeniorSkill(): Promise<string> {
 function assertSeniorSkillContract(content: string): void {
 	const parsed = parseSkill(content);
 	assert.equal(parsed.frontmatter.get("name"), "senior-agent");
-	assert.match(parsed.frontmatterText, /^metadata:\s*\n  version: "3\.2\.0"$/m);
+	assert.match(parsed.frontmatterText, /^metadata:\s*\n  version: "3\.3\.0"$/m);
 	assert.match(content, /ambiguous authority.*advisory tool set.*prohibit edits/is);
 	assert.match(content, /Always set `allowSubagents: true` on the senior agent/i);
 	assert.match(content, /must not receive sprint validation, sprint execution, user-questioning, or other root-only tools/i);
@@ -4561,8 +4565,8 @@ function assertSeniorSkillContract(content: string): void {
 	const examples = extractSpawnExamples(content);
 	assert.equal(examples.length, 2, "senior-agent must show exactly advisory and edit-authorized spawns");
 	assert.deepEqual(examples.map(({ name, provider, model, thinkingLevel, tools, allowSubagents }) => ({ name: name.replace(/<[^>]+>/g, "<unique>"), provider, model, thinkingLevel, tools, allowSubagents })), [
-		{ name: "senior-<unique>", provider: "<resolved-senior-provider>", model: "<resolved-senior-model>", thinkingLevel: "<resolved-senior-thinking>", tools: ["read"], allowSubagents: true },
-		{ name: "senior-<unique>", provider: "<resolved-senior-provider>", model: "<resolved-senior-model>", thinkingLevel: "<resolved-senior-thinking>", tools: ["read", "bash", "edit", "write"], allowSubagents: true },
+		{ name: "senior-<unique>", provider: "<selected-senior-provider>", model: "<selected-senior-model>", thinkingLevel: "<selected-senior-thinking>", tools: ["read"], allowSubagents: true },
+		{ name: "senior-<unique>", provider: "<selected-senior-provider>", model: "<selected-senior-model>", thinkingLevel: "<selected-senior-thinking>", tools: ["read", "bash", "edit", "write"], allowSubagents: true },
 	]);
 }
 
@@ -4573,12 +4577,15 @@ test("senior-agent skill resolves its model from the configuration and escalates
 	assert.match(content, /`seniorAgent`/);
 	assert.match(content, /`configs\/index\.ts`[\s\S]*`DEFAULT_SPRINT_PLANNER_AGENT_CONFIGURATION`/is);
 	assert.match(content, /`MODEL_PROFILES`[\s\S]*`types\.ts`/s);
-	// Thinking escalation ladder
-	assert.match(content, /next higher thinking level/i);
-	assert.match(content, /high.*xhigh.*max/is);
-	// No substitution
-	assert.match(content, /never be inherited, omitted, downgraded, or replaced/i);
-	assert.match(content, /do not emulate the senior agent with another model/i);
+	// Thinking/model escalation and user override policy
+	assert.match(content, /First pass:[\s\S]*`high`/i);
+	assert.match(content, /Second pass[\s\S]*`xhigh`/i);
+	assert.match(content, /Third pass[\s\S]*`openai-codex\/gpt-6-astra`[\s\S]*`xhigh`/i);
+	assert.match(content, /hard problem[\s\S]*repeated, evidenced failures/i);
+	assert.match(content, /explicit user-requested senior model override/i);
+	assert.match(content, /override[\s\S]*takes precedence/i);
+	assert.match(content, /never be inherited, omitted, or silently downgraded/i);
+	assert.match(content, /do not emulate the senior agent with an unapproved model/i);
 });
 
 test("senior-agent advisory spawn example has exact read-only tool set", async () => {
@@ -4588,9 +4595,9 @@ test("senior-agent advisory spawn example has exact read-only tool set", async (
 	assert.ok(advisory.length >= 1, "at least one advisory example");
 
 	for (const adv of advisory) {
-		assert.equal(adv.provider, "<resolved-senior-provider>");
-		assert.equal(adv.model, "<resolved-senior-model>");
-		assert.equal(adv.thinkingLevel, "<resolved-senior-thinking>");
+		assert.equal(adv.provider, "<selected-senior-provider>");
+		assert.equal(adv.model, "<selected-senior-model>");
+		assert.equal(adv.thinkingLevel, "<selected-senior-thinking>");
 		assert.deepEqual(adv.tools, ["read"]);
 		assert.equal(adv.allowSubagents, true);
 	}
@@ -4603,9 +4610,9 @@ test("senior-agent edit-authorized spawn example has exact four-tool set", async
 	assert.ok(editAuth.length >= 1, "at least one edit-authorized example");
 
 	for (const ed of editAuth) {
-		assert.equal(ed.provider, "<resolved-senior-provider>");
-		assert.equal(ed.model, "<resolved-senior-model>");
-		assert.equal(ed.thinkingLevel, "<resolved-senior-thinking>");
+		assert.equal(ed.provider, "<selected-senior-provider>");
+		assert.equal(ed.model, "<selected-senior-model>");
+		assert.equal(ed.thinkingLevel, "<selected-senior-thinking>");
 		assert.deepEqual(ed.tools, ["read", "bash", "edit", "write"]);
 		assert.equal(ed.allowSubagents, true);
 	}
@@ -4648,7 +4655,7 @@ function assertImageSkillContract(content: string): void {
 	assert.deepEqual(examples[0], {
 		name: "vision-<unique-scope>",
 		provider: "openai-codex",
-		model: "gpt-5.6-sol",
+		model: "gpt-6-sol",
 		thinkingLevel: "medium",
 		tools: ["read"],
 	});
@@ -4659,7 +4666,7 @@ test("image-viewing skill maintains exact model tuple and read-only tool policy"
 	assertImageSkillContract(content);
 	// Exact model tuple
 	assert.match(content, /"provider"\s*:\s*"openai-codex"/);
-	assert.match(content, /"model"\s*:\s*"gpt-5\.6-sol"/);
+	assert.match(content, /"model"\s*:\s*"gpt-6-sol"/);
 	assert.match(content, /"thinkingLevel"\s*:\s*"medium"/);
 	// No substitution
 	assert.match(content, /Never inherit, omit, downgrade, or replace/i);
@@ -4673,7 +4680,7 @@ test("image-viewing spawn example has only read tool", async () => {
 	const vision = examples[0];
 	assert.match(vision.name, /vision-/);
 	assert.equal(vision.provider, "openai-codex");
-	assert.equal(vision.model, "gpt-5.6-sol");
+	assert.equal(vision.model, "gpt-6-sol");
 	assert.equal(vision.thinkingLevel, "medium");
 	assert.deepEqual(vision.tools, ["read"]);
 });
