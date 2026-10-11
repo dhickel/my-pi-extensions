@@ -1,0 +1,336 @@
+{
+  "author_id": "cc0-fixture-author:01a12b9c-b128-77bb-9db9-9a16433c24a6",
+  "families": [
+    {
+      "background": "loam",
+      "cell_size": 32,
+      "family": "grass",
+      "foreground": "orchard turf",
+      "mode": "opaque",
+      "pack": "orchard",
+      "roles": [
+        {
+          "coordinate": [
+            5,
+            3
+          ],
+          "image": "references/art/grass/background.png",
+          "image_sha256": "6ba268f1475e37b2c3c852abd39fb770327b89b59cde486a14457d1414e1538c",
+          "role": "background",
+          "source_sha256": "7f68b3c20c034d12576d57bacd9082ea9f204f41de9d9a5a02c9c559eaedc78e",
+          "visible_rgba_sha256": "b3a85fc773f46165bbeb59f70c9bd23bbaf147af5724b68f0c5cc8fd1a619ace"
+        },
+        {
+          "coordinate": [
+            4,
+            0
+          ],
+          "image": "references/art/grass/solid.png",
+          "image_sha256": "4b84a7f2d6313509d7eeb7e1fde8e2dfd20971f34e154e8d23bbe622207bbd9e",
+          "role": "solid",
+          "source_sha256": "7f68b3c20c034d12576d57bacd9082ea9f204f41de9d9a5a02c9c559eaedc78e",
+          "visible_rgba_sha256": "2c86549aceb48176ba3747a65d4f5b3a7b9bda39150c5af3cef3e09ec53cd933"
+        },
+        {
+          "coordinate": [
+            1,
+            2
+          ],
+          "image": "references/art/grass/convex-NW.png",
+          "image_sha256": "8bf880f93cbde9b5bd0fbe0157be48ea6fd26fdb2d5a3d836c74c83f9d6e0a99",
+          "role": "convex-NW",
+          "source_sha256": "7f68b3c20c034d12576d57bacd9082ea9f204f41de9d9a5a02c9c559eaedc78e",
+          "visible_rgba_sha256": "266ed1289aa6248f1e35e665351b80903ca5ce81c912e386a9d1432392a9228a"
+        },
+        {
+          "coordinate": [
+            0,
+            0
+          ],
+          "image": "references/art/grass/convex-NE.png",
+          "image_sha256": "701067e270494d810e408ea4e71b9b47ae121fc62196ab0038c9b3700b8ac4be",
+          "role": "convex-NE",
+          "source_sha256": "7f68b3c20c034d12576d57bacd9082ea9f204f41de9d9a5a02c9c559eaedc78e",
+          "visible_rgba_sha256": "6ca1021f0dde28a0c81c281341c09469f7cb371c95511f177a7a7a4ea83bbf37"
+        },
+        {
+          "coordinate": [
+            1,
+            3
+          ],
+          "image": "references/art/grass/convex-SE.png",
+          "image_sha256": "a7afd4227c4bd5c9196e25e9e491753351e13a06d5856803085e6efe1bcf24ee",
+          "role": "convex-SE",
+          "source_sha256": "7f68b3c20c034d12576d57bacd9082ea9f204f41de9d9a5a02c9c559eaedc78e",
+          "visible_rgba_sha256": "dfe0f1bfc6436be1d9c496537d49803d1d47e293d2710de7bf53513a4d0a895b"
+        },
+        {
+          "coordinate": [
+            4,
+            1
+          ],
+          "image": "references/art/grass/convex-SW.png",
+          "image_sha256": "f97a518be1a50aef9b68c5d9b9dcfd914b8e35151a480e01aeaaa75e451e144f",
+          "role": "convex-SW",
+          "source_sha256": "7f68b3c20c034d12576d57bacd9082ea9f204f41de9d9a5a02c9c559eaedc78e",
+          "visible_rgba_sha256": "5a3a9b8755cde3aa6ff16f9edd95601fcecccf8c634c52b91276c991c2227971"
+        },
+        {
+          "coordinate": [
+            7,
+            0
+          ],
+          "image": "references/art/grass/edge-N.png",
+          "image_sha256": "692ad6e632bcf4c7c9e10029d81eb82ebf95e74a4da6d4fac35de5d43cd738b9",
+          "role": "edge-N",
+          "source_sha256": "7f68b3c20c034d12576d57bacd9082ea9f204f41de9d9a5a02c9c559eaedc78e",
+          "visible_rgba_sha256": "42b0735d2b54f6c388b8cfb15f8e7cbcb01800a3fb00f70b90246a531f506fbf"
+        },
+        {
+          "coordinate": [
+            6,
+            2
+          ],
+          "image": "references/art/grass/edge-E.png",
+          "image_sha256": "77c1cc43edb27b639468b187482c829baa8e30ce192199a1055f8302e7a64cec",
+          "role": "edge-E",
+          "source_sha256": "7f68b3c20c034d12576d57bacd9082ea9f204f41de9d9a5a02c9c559eaedc78e",
+          "visible_rgba_sha256": "da3b429742186b9b70f89da099900dcae8d9fb6aee4ee14485c80ef4d0b58adc"
+        },
+        {
+          "coordinate": [
+            2,
+            0
+          ],
+          "image": "references/art/grass/edge-S.png",
+          "image_sha256": "09ae59503b1a1c7c6265db0c964360b27aee377cb771d471b6ba56ce6bfb4c39",
+          "role": "edge-S",
+          "source_sha256": "7f68b3c20c034d12576d57bacd9082ea9f204f41de9d9a5a02c9c559eaedc78e",
+          "visible_rgba_sha256": "45ff42b509d8006c65ebe3516f7196267105b19bc9ba235e211ea92c2a6f4473"
+        },
+        {
+          "coordinate": [
+            3,
+            2
+          ],
+          "image": "references/art/grass/edge-W.png",
+          "image_sha256": "0ba6b3ebed47c770fc73997d9d754573dc690a3b70b910dbe3884ef239f44946",
+          "role": "edge-W",
+          "source_sha256": "7f68b3c20c034d12576d57bacd9082ea9f204f41de9d9a5a02c9c559eaedc78e",
+          "visible_rgba_sha256": "623b7e06d16b7c483084ad137fb4df3bea611aa7169c8f987189f4c943f6bb3b"
+        },
+        {
+          "coordinate": [
+            6,
+            3
+          ],
+          "image": "references/art/grass/concave-NW.png",
+          "image_sha256": "68e23f4ea33cf8707b79854a6f4f9d64152a75536562bf66a47c95929a2e8c20",
+          "role": "concave-NW",
+          "source_sha256": "7f68b3c20c034d12576d57bacd9082ea9f204f41de9d9a5a02c9c559eaedc78e",
+          "visible_rgba_sha256": "3dd0f8f6a628ae35ef99f54c713f3f95022c324eb1e6f29b713161db55e8664e"
+        },
+        {
+          "coordinate": [
+            1,
+            1
+          ],
+          "image": "references/art/grass/concave-NE.png",
+          "image_sha256": "095f1ca9e4b0eb472bfcde2aadfe1800374d2f2609e5583c5c5fb0c85b8c5a30",
+          "role": "concave-NE",
+          "source_sha256": "7f68b3c20c034d12576d57bacd9082ea9f204f41de9d9a5a02c9c559eaedc78e",
+          "visible_rgba_sha256": "07dd51fe9e6c54b2e0a6bfd4ff57a0da08312f31f2ef03bc08dabaedb6d7655e"
+        },
+        {
+          "coordinate": [
+            7,
+            1
+          ],
+          "image": "references/art/grass/concave-SE.png",
+          "image_sha256": "4e43d3ea8af10c932b5087b4a7d5148cd4f323d282673d652f4787c63872d64d",
+          "role": "concave-SE",
+          "source_sha256": "7f68b3c20c034d12576d57bacd9082ea9f204f41de9d9a5a02c9c559eaedc78e",
+          "visible_rgba_sha256": "def617e59e2c9d1cccc564e46bce90985c250daa42cabeff4f0bb40aa4084f23"
+        },
+        {
+          "coordinate": [
+            2,
+            3
+          ],
+          "image": "references/art/grass/concave-SW.png",
+          "image_sha256": "d6202e5abbd9bb4c193f4cc91c4b2c0dd71fbb0318827a0a31c5a092a393ce23",
+          "role": "concave-SW",
+          "source_sha256": "7f68b3c20c034d12576d57bacd9082ea9f204f41de9d9a5a02c9c559eaedc78e",
+          "visible_rgba_sha256": "bd4753ea60716243efb0971e0d02187e189fa7c9306acecef2c29eb642b65c4e"
+        }
+      ],
+      "source": "terrain"
+    },
+    {
+      "background": "empty authored alpha",
+      "cell_size": 32,
+      "family": "seeds",
+      "foreground": "rose seeds",
+      "mode": "alpha",
+      "pack": "orchard",
+      "roles": [
+        {
+          "coordinate": [
+            2,
+            1
+          ],
+          "image": "references/art/seeds/background.png",
+          "image_sha256": "69a2b73f97cebd77b01ee364b12fd9ce44a369cfd58102e2e9880cbad43fa0a4",
+          "role": "background",
+          "source_sha256": "7f68b3c20c034d12576d57bacd9082ea9f204f41de9d9a5a02c9c559eaedc78e",
+          "visible_rgba_sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+        },
+        {
+          "coordinate": [
+            3,
+            3
+          ],
+          "image": "references/art/seeds/solid.png",
+          "image_sha256": "498f34ba7ba6caa0927e607d88c8e161883e7a4eec4d98c52fece90c2c585f07",
+          "role": "solid",
+          "source_sha256": "7f68b3c20c034d12576d57bacd9082ea9f204f41de9d9a5a02c9c559eaedc78e",
+          "visible_rgba_sha256": "eef822584acc6e401924e7ca89b40f4f3628f8b146120c95c8a24db42aa3f0e5"
+        },
+        {
+          "coordinate": [
+            3,
+            0
+          ],
+          "image": "references/art/seeds/convex-NW.png",
+          "image_sha256": "e25892adfdc9e75b57acd85e689c19312bf2f8e046bbef612988b594303f10d7",
+          "role": "convex-NW",
+          "source_sha256": "7f68b3c20c034d12576d57bacd9082ea9f204f41de9d9a5a02c9c559eaedc78e",
+          "visible_rgba_sha256": "df4e64e456ed639f36ae0d67b063744dec9fdaf724f0250a1ed0efbe4447fe98"
+        },
+        {
+          "coordinate": [
+            5,
+            2
+          ],
+          "image": "references/art/seeds/convex-NE.png",
+          "image_sha256": "25dc0678990bac212f0fa8e205e418a2cbd021aed8fcca0aa3b5f06e43f949ad",
+          "role": "convex-NE",
+          "source_sha256": "7f68b3c20c034d12576d57bacd9082ea9f204f41de9d9a5a02c9c559eaedc78e",
+          "visible_rgba_sha256": "cbde9f3b2b26a22b70808ef7186b6d025092cddedf7b4b0b8acb9157f583d1d5"
+        },
+        {
+          "coordinate": [
+            6,
+            0
+          ],
+          "image": "references/art/seeds/convex-SE.png",
+          "image_sha256": "988cd409d7838fa1b3707e456b1b0fb70b0970498316cab2f263a6518852af3d",
+          "role": "convex-SE",
+          "source_sha256": "7f68b3c20c034d12576d57bacd9082ea9f204f41de9d9a5a02c9c559eaedc78e",
+          "visible_rgba_sha256": "90c0a6e2c468dd440e75585b5a6a8ea9fc91a7bd0d35e5a05d1300d66f4436d6"
+        },
+        {
+          "coordinate": [
+            7,
+            3
+          ],
+          "image": "references/art/seeds/convex-SW.png",
+          "image_sha256": "b5334b121364ab901ec0e81af5cb486ff0f1be3e37e50da868a630d6c1a9317e",
+          "role": "convex-SW",
+          "source_sha256": "7f68b3c20c034d12576d57bacd9082ea9f204f41de9d9a5a02c9c559eaedc78e",
+          "visible_rgba_sha256": "07561cf8183c89292b8c5f0b319758ac29c96baca4b2ad23ef6004fcd51a7390"
+        },
+        {
+          "coordinate": [
+            6,
+            1
+          ],
+          "image": "references/art/seeds/edge-N.png",
+          "image_sha256": "72cf9b89b58d5910abbcc852092d68367284a3cbae6b85853edde65b91f90f59",
+          "role": "edge-N",
+          "source_sha256": "7f68b3c20c034d12576d57bacd9082ea9f204f41de9d9a5a02c9c559eaedc78e",
+          "visible_rgba_sha256": "f13dcd7571f988230380902acf3a3f01cc9802cb2fa89988dc620d8c17762a60"
+        },
+        {
+          "coordinate": [
+            1,
+            0
+          ],
+          "image": "references/art/seeds/edge-E.png",
+          "image_sha256": "cc6f63a0dfc775838a91c15df47b8fc835595adb4b03ac4a3ff775068d28aa57",
+          "role": "edge-E",
+          "source_sha256": "7f68b3c20c034d12576d57bacd9082ea9f204f41de9d9a5a02c9c559eaedc78e",
+          "visible_rgba_sha256": "7033c5fc759235015f91ff71f300f9304d1e5e65e7c8ee2812c7c4a4bce38b7e"
+        },
+        {
+          "coordinate": [
+            0,
+            3
+          ],
+          "image": "references/art/seeds/edge-S.png",
+          "image_sha256": "190a4a44bcd3e241c05b10ff6a634b4b25bbbdaf292d9c17e04f2d0be4b92f98",
+          "role": "edge-S",
+          "source_sha256": "7f68b3c20c034d12576d57bacd9082ea9f204f41de9d9a5a02c9c559eaedc78e",
+          "visible_rgba_sha256": "4469aec1057d422e300171972e8ceda05016d1c21af6f4931ce6f48f8a2c23c1"
+        },
+        {
+          "coordinate": [
+            2,
+            2
+          ],
+          "image": "references/art/seeds/edge-W.png",
+          "image_sha256": "57350ddabfb9b8abeefacf59c2635f7e79f02724c8e1e361abdf178d2b201c98",
+          "role": "edge-W",
+          "source_sha256": "7f68b3c20c034d12576d57bacd9082ea9f204f41de9d9a5a02c9c559eaedc78e",
+          "visible_rgba_sha256": "c2022b52b635b5f034e611b790394b51a2a54cec5f5518bd74a153a1dd58c8cc"
+        },
+        {
+          "coordinate": [
+            0,
+            1
+          ],
+          "image": "references/art/seeds/concave-NW.png",
+          "image_sha256": "681d3793ec0e32e6d40cf0bc475321958ed9bb0d7a359c11a163d5b5e28aff83",
+          "role": "concave-NW",
+          "source_sha256": "7f68b3c20c034d12576d57bacd9082ea9f204f41de9d9a5a02c9c559eaedc78e",
+          "visible_rgba_sha256": "dffd1004403a16ae96a962fdb27f8586c07c27c3ab784690097bdeae8a009c14"
+        },
+        {
+          "coordinate": [
+            4,
+            3
+          ],
+          "image": "references/art/seeds/concave-NE.png",
+          "image_sha256": "8043da1192776f12d35b8e98126ac8d6bc65b992d1146ffa0706614949152e1b",
+          "role": "concave-NE",
+          "source_sha256": "7f68b3c20c034d12576d57bacd9082ea9f204f41de9d9a5a02c9c559eaedc78e",
+          "visible_rgba_sha256": "3013f546ac915082f47660e406d0fa0f013d20e2a4fbe171e25c713b6df94479"
+        },
+        {
+          "coordinate": [
+            5,
+            0
+          ],
+          "image": "references/art/seeds/concave-SE.png",
+          "image_sha256": "dc5f3067bdf90998ac3252c971409840685ebafff66c74c6a3088000c1460b5f",
+          "role": "concave-SE",
+          "source_sha256": "7f68b3c20c034d12576d57bacd9082ea9f204f41de9d9a5a02c9c559eaedc78e",
+          "visible_rgba_sha256": "29597c6b8bf07c18ed39e1992b6f658561ae7fde58169021e3689bdf6c26f452"
+        },
+        {
+          "coordinate": [
+            4,
+            2
+          ],
+          "image": "references/art/seeds/concave-SW.png",
+          "image_sha256": "55f0bf56b19bdbe1d2484d26abac8fe1de3c8c0f75a20d5ce82855c723f394d5",
+          "role": "concave-SW",
+          "source_sha256": "7f68b3c20c034d12576d57bacd9082ea9f204f41de9d9a5a02c9c559eaedc78e",
+          "visible_rgba_sha256": "1920ec193d941d2ffd72253f8f47abfade4575918eef1aa6160d54fc5f26192a"
+        }
+      ],
+      "source": "terrain"
+    }
+  ],
+  "schema_version": 1
+}

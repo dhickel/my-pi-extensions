@@ -1,0 +1,917 @@
+{
+  "cell_size": 16,
+  "frozen_reference": "references/frozen.json",
+  "id": "saltworks-16",
+  "inventory": "records/inventory.json",
+  "licenses": [
+    {
+      "author": "cc0-fixture-author:01a12b9c-b128-77bb-9db9-9a16433c24a6",
+      "grant": "CC0-1.0: To the extent possible under law, the fixture author waives all copyright and related rights in this original procedural fixture artwork and data. No third-party source artwork was used.",
+      "id": "cc0",
+      "path": "originals/LICENSE.txt",
+      "spdx": "CC0-1.0"
+    }
+  ],
+  "originals": [
+    {
+      "license": "cc0",
+      "path": "originals/terrain.png"
+    },
+    {
+      "license": "cc0",
+      "path": "originals/parts.png"
+    },
+    {
+      "license": "cc0",
+      "path": "originals/sprite.png"
+    },
+    {
+      "license": "cc0",
+      "path": "originals/LICENSE.txt"
+    },
+    {
+      "license": "cc0",
+      "path": "originals/help.txt"
+    },
+    {
+      "license": "cc0",
+      "path": "originals/sketch.svg"
+    }
+  ],
+  "output_root": "outputs",
+  "packs": [
+    {
+      "catalog": "data/catalog.json",
+      "id": "saltworks"
+    }
+  ],
+  "profile": "quarter-corner-v1",
+  "python_executable": "/usr/bin/python3",
+  "scenes": "data/scenes.json",
+  "schema_version": 1,
+  "source_review": "reviews/source.json",
+  "source_roots": [
+    "originals"
+  ],
+  "sources": [
+    {
+      "aliases": [],
+      "animations": [],
+      "frame_size": [
+        16,
+        16
+      ],
+      "id": "terrain",
+      "kind": "atlas",
+      "pack": "saltworks",
+      "path": "originals/terrain.png",
+      "slots": [
+        {
+          "empty": true,
+          "id": "slot-0",
+          "rect": [
+            0,
+            0,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": false,
+          "id": "slot-1",
+          "rect": [
+            16,
+            0,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": false,
+          "id": "slot-2",
+          "rect": [
+            32,
+            0,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": false,
+          "id": "slot-3",
+          "rect": [
+            48,
+            0,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": false,
+          "id": "slot-4",
+          "rect": [
+            64,
+            0,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": false,
+          "id": "slot-5",
+          "rect": [
+            80,
+            0,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": false,
+          "id": "slot-6",
+          "rect": [
+            96,
+            0,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": false,
+          "id": "slot-7",
+          "rect": [
+            0,
+            16,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": true,
+          "id": "slot-8",
+          "rect": [
+            16,
+            16,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": false,
+          "id": "slot-9",
+          "rect": [
+            32,
+            16,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": false,
+          "id": "slot-10",
+          "rect": [
+            48,
+            16,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": false,
+          "id": "slot-11",
+          "rect": [
+            64,
+            16,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": true,
+          "id": "slot-12",
+          "rect": [
+            80,
+            16,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": false,
+          "id": "slot-13",
+          "rect": [
+            96,
+            16,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": false,
+          "id": "slot-14",
+          "rect": [
+            0,
+            32,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": false,
+          "id": "slot-15",
+          "rect": [
+            16,
+            32,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": false,
+          "id": "slot-16",
+          "rect": [
+            32,
+            32,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": true,
+          "id": "slot-17",
+          "rect": [
+            48,
+            32,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": false,
+          "id": "slot-18",
+          "rect": [
+            64,
+            32,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": false,
+          "id": "slot-19",
+          "rect": [
+            80,
+            32,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": false,
+          "id": "slot-20",
+          "rect": [
+            96,
+            32,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": true,
+          "id": "slot-21",
+          "rect": [
+            0,
+            48,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": false,
+          "id": "slot-22",
+          "rect": [
+            16,
+            48,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": false,
+          "id": "slot-23",
+          "rect": [
+            32,
+            48,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": true,
+          "id": "slot-24",
+          "rect": [
+            48,
+            48,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": false,
+          "id": "slot-25",
+          "rect": [
+            64,
+            48,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": false,
+          "id": "slot-26",
+          "rect": [
+            80,
+            48,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": false,
+          "id": "slot-27",
+          "rect": [
+            96,
+            48,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": false,
+          "id": "slot-28",
+          "rect": [
+            0,
+            64,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": true,
+          "id": "slot-29",
+          "rect": [
+            16,
+            64,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": false,
+          "id": "slot-30",
+          "rect": [
+            32,
+            64,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": false,
+          "id": "slot-31",
+          "rect": [
+            48,
+            64,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": false,
+          "id": "slot-32",
+          "rect": [
+            64,
+            64,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": false,
+          "id": "slot-33",
+          "rect": [
+            80,
+            64,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": true,
+          "id": "slot-34",
+          "rect": [
+            96,
+            64,
+            16,
+            16
+          ]
+        }
+      ]
+    },
+    {
+      "aliases": [],
+      "animations": [],
+      "frame_size": [
+        16,
+        16
+      ],
+      "id": "parts",
+      "kind": "atlas",
+      "pack": "saltworks",
+      "path": "originals/parts.png",
+      "slots": [
+        {
+          "empty": false,
+          "id": "slot-0",
+          "rect": [
+            0,
+            0,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": false,
+          "id": "slot-1",
+          "rect": [
+            16,
+            0,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": false,
+          "id": "slot-2",
+          "rect": [
+            32,
+            0,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": false,
+          "id": "slot-3",
+          "rect": [
+            48,
+            0,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": false,
+          "id": "slot-4",
+          "rect": [
+            64,
+            0,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": true,
+          "id": "slot-5",
+          "rect": [
+            80,
+            0,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": false,
+          "id": "slot-6",
+          "rect": [
+            0,
+            16,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": false,
+          "id": "slot-7",
+          "rect": [
+            16,
+            16,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": false,
+          "id": "slot-8",
+          "rect": [
+            32,
+            16,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": true,
+          "id": "slot-9",
+          "rect": [
+            48,
+            16,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": false,
+          "id": "slot-10",
+          "rect": [
+            64,
+            16,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": true,
+          "id": "slot-11",
+          "rect": [
+            80,
+            16,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": false,
+          "id": "slot-12",
+          "rect": [
+            0,
+            32,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": false,
+          "id": "slot-13",
+          "rect": [
+            16,
+            32,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": true,
+          "id": "slot-14",
+          "rect": [
+            32,
+            32,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": true,
+          "id": "slot-15",
+          "rect": [
+            48,
+            32,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": true,
+          "id": "slot-16",
+          "rect": [
+            64,
+            32,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": true,
+          "id": "slot-17",
+          "rect": [
+            80,
+            32,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": false,
+          "id": "slot-18",
+          "rect": [
+            0,
+            48,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": false,
+          "id": "slot-19",
+          "rect": [
+            16,
+            48,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": false,
+          "id": "slot-20",
+          "rect": [
+            32,
+            48,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": false,
+          "id": "slot-21",
+          "rect": [
+            48,
+            48,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": true,
+          "id": "slot-22",
+          "rect": [
+            64,
+            48,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": true,
+          "id": "slot-23",
+          "rect": [
+            80,
+            48,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": true,
+          "id": "slot-24",
+          "rect": [
+            0,
+            64,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": true,
+          "id": "slot-25",
+          "rect": [
+            16,
+            64,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": false,
+          "id": "slot-26",
+          "rect": [
+            32,
+            64,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": false,
+          "id": "slot-27",
+          "rect": [
+            48,
+            64,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": true,
+          "id": "slot-28",
+          "rect": [
+            64,
+            64,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": true,
+          "id": "slot-29",
+          "rect": [
+            80,
+            64,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": true,
+          "id": "slot-30",
+          "rect": [
+            0,
+            80,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": true,
+          "id": "slot-31",
+          "rect": [
+            16,
+            80,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": true,
+          "id": "slot-32",
+          "rect": [
+            32,
+            80,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": true,
+          "id": "slot-33",
+          "rect": [
+            48,
+            80,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": true,
+          "id": "slot-34",
+          "rect": [
+            64,
+            80,
+            16,
+            16
+          ]
+        },
+        {
+          "empty": true,
+          "id": "slot-35",
+          "rect": [
+            80,
+            80,
+            16,
+            16
+          ]
+        }
+      ]
+    },
+    {
+      "aliases": [
+        {
+          "id": "still",
+          "target": "slot-3"
+        }
+      ],
+      "animations": [
+        {
+          "frames": [
+            {
+              "duration_ms": 70,
+              "slot": "slot-4",
+              "timing": "supplied"
+            },
+            {
+              "duration_ms": 130,
+              "slot": "slot-0",
+              "timing": "supplied"
+            },
+            {
+              "duration_ms": 40,
+              "slot": "slot-3",
+              "timing": "supplied"
+            }
+          ],
+          "id": "flicker"
+        },
+        {
+          "frames": [
+            {
+              "duration_ms": 100,
+              "slot": "slot-1",
+              "timing": "authoring-default"
+            },
+            {
+              "duration_ms": 100,
+              "slot": "slot-4",
+              "timing": "authoring-default"
+            },
+            {
+              "duration_ms": 100,
+              "slot": "slot-0",
+              "timing": "authoring-default"
+            }
+          ],
+          "id": "study"
+        }
+      ],
+      "frame_size": [
+        20,
+        36
+      ],
+      "id": "sprite",
+      "kind": "sprite",
+      "pack": "saltworks",
+      "path": "originals/sprite.png",
+      "slots": [
+        {
+          "empty": false,
+          "id": "slot-0",
+          "rect": [
+            0,
+            0,
+            20,
+            36
+          ]
+        },
+        {
+          "empty": false,
+          "id": "slot-1",
+          "rect": [
+            20,
+            0,
+            20,
+            36
+          ]
+        },
+        {
+          "empty": true,
+          "id": "slot-2",
+          "rect": [
+            40,
+            0,
+            20,
+            36
+          ]
+        },
+        {
+          "empty": false,
+          "id": "slot-3",
+          "rect": [
+            0,
+            36,
+            20,
+            36
+          ]
+        },
+        {
+          "empty": false,
+          "id": "slot-4",
+          "rect": [
+            20,
+            36,
+            20,
+            36
+          ]
+        },
+        {
+          "empty": true,
+          "id": "slot-5",
+          "rect": [
+            40,
+            36,
+            20,
+            36
+          ]
+        }
+      ]
+    }
+  ],
+  "tiled_runtime": "/home/dhickel/.cache/rpgw-tiled/1.12.2/squashfs-root/AppRun"
+}

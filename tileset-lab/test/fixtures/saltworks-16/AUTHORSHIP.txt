@@ -1,0 +1,6 @@
+saltworks-16
+CC0-1.0: To the extent possible under law, the fixture author waives all copyright and related rights in this original procedural fixture artwork and data. No third-party source artwork was used.
+Author identity: cc0-fixture-author:01a12b9c-b128-77bb-9db9-9a16433c24a6
+Native-resolution procedural drawing, independent of all RPGW art.
+No independent source approval is supplied. Inventory requires explicit inspect initialization.
+16px and 32px drawings are not scaled copies.
