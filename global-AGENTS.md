@@ -54,6 +54,7 @@ The globally installed `internal-dev` extension owns project trust, `.internal-d
 
 ## Validation and Reporting
 
-- Exercise changed behavior with focused tests, including relevant failure and edge cases, then run the applicable broader test, typecheck, lint, or build suite available in the project.
+- Exercise changed behavior with focused tests, including relevant failure and edge cases, and the targeted typecheck, lint, build, or integration checks required for the unit of work.
+- When planning or executing a sprint in a project with large test or validation suites, reserve full-suite runs for the sprint's final validation gate by default. Do not plan or run the full suite after every phase or unit. An earlier full-suite run is permitted when explicitly required by the unit's contract or when planning determines that a large change requires it for adequate validation; document that requirement or justification in the plan. This scheduling rule does not waive required validation or the final full-suite gate.
 - Diagnose failures caused by the work and repair them. If a broader check has a demonstrably pre-existing or unrelated failure, report it precisely with evidence and distinguish it from the validated change.
 - Review the final diff for scope, completeness, accidental API growth, placeholders, and unrelated edits. Report what changed, what passed, and any genuine remaining blocker without overstating success.
