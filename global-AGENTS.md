@@ -1,10 +1,26 @@
 # Global Pi Engineering Policy
 
+## Global Policy Synchronization
+
+- The version-controlled policy source is `global-AGENTS.md` in `/home/dhickel/AI/Workspaces/Pi-extensions`; its installed runtime copy is `/home/dhickel/.pi/agent/AGENTS.md` (`~/.pi/agent/AGENTS.md`). Keep these files byte-for-byte identical.
+- Before changing either copy, compare both and reconcile any existing differences deliberately, preserving valid instructions rather than blindly overwriting unsynchronized work. Apply every global policy change to both copies in the same work session.
+- Before committing or reporting completion, run `cmp global-AGENTS.md /home/dhickel/.pi/agent/AGENTS.md` from the repository root and require success. Commit the repository copy through the normal branch/validation/merge workflow and push when requested; the installed copy is outside this Git repository.
+- Synchronization is a mandatory agent workflow, not an automatic mirroring service. If either copy is unavailable or cannot be updated, report synchronization as blocked rather than claiming the files are in sync. Never put credential values in either policy file.
+
 ## Instruction Discipline
 
 - Follow system and user instructions first, then the applicable repository instructions and living specifications. Use this file as the global default where more specific instructions do not conflict.
 - Preserve unrelated edits, untracked files, and established project contracts. Inspect the relevant code and records before changing them.
 - For implementation work, own the requested outcome through completion. Do not stop at diagnosis, advice, or a partial patch unless the user requested only that scope or a true external blocker remains after escalation.
+
+## Credentials and Secrets
+
+- Home-lab credentials live in exactly two places: the Toast-It note `Home Lab Credentials` (note uuid `028f03e0-b5fd-4337-8a55-f49a234750c6`) and the local mirror `/home/dhickel/AI/Home/LOCAL_SYSTEMS.md`.
+- Any credential that is added, changed, rotated, or removed must be written to both places in the same work session. Never update one without the other.
+- Read the note (`note.get`) before editing it, and edit with patch semantics so unrelated entries survive; keep values and headings identical on both sides.
+- Non-secret system facts (hardware, storage, PCI passthrough, service layout) live only in the local file; the Toast-It note carries credentials only.
+- If Toast-It is unreachable, update the local file, keep working, and report the pending note update explicitly instead of silently skipping it.
+- Never echo credential values into plans, changelogs, reviews, logs, commit messages, or chat output that does not require them.
 
 ## Internal Development Records
 
@@ -22,8 +38,11 @@ The globally installed `internal-dev` extension owns project trust, `.internal-d
 - When planning or implementing features, do not add CI, dependency pinning, or complex build workflows unless the user explicitly requests them or they are explicitly required by the domain and its integrations. Do not include them merely as generic best practices; when required by the domain or an integration, state the concrete requirement and keep the solution minimal.
 - Treat an accepted plan, current specifications, user constraints, and acceptance criteria as the implementation contract. Complete every in-scope requirement and validation step; do not silently skip, collapse, replace, or postpone them.
 - Never substitute a stub, placeholder, empty method, hard-coded fake, commented-out path, TODO, or claimed future follow-up for required behavior.
+- Never scaffold, defer, or produce bare-minimum work. Every phase, feature, and validation must be fully implemented and proven against the plan's acceptance criteria. A skeleton that compiles but is not wired, sealed, and validated is a failure.
+- When a plan is large, use the available orchestration and subagent workflows to parallelize dependency-isolated phases. Plans are designed by senior management to be fully executable — never override, simplify, reduce scope, or silently drop features because a plan looks too large.
+- Your role is to orchestrate the plan exactly as defined: ensure every phase is implemented, every feature is delivered, every criterion is met, and every validation is proven. Do not make scope decisions. Do not decide something is "too much" or "not worth it." Just execute.
 - Do not add speculative methods, interfaces, extension hooks, configuration, generalized frameworks, or public API surface for possible future needs. Keep out-of-scope ideas out of the implementation and route them through the project workflow only when required.
-- Difficulty, uncertainty, elapsed effort, or a failed attempt is not a reason to defer work. Investigate, escalate, integrate the result, and continue.
+- Difficulty, uncertainty, or a failed attempt is not a reason to defer or scaffold. Investigate, escalate, integrate the result, and continue until the requirement is met.
 - If evidence shows that the accepted plan is incorrect, unsafe, or incompatible with a governing contract, stop the affected path and escalate. Do not materially change scope, behavior, architecture, or public contracts until the conflict and proposed revision have been presented to the user and approved. Continue unaffected work when it is safe to do so.
 - Never claim completion while requested behavior, required validation, or an acknowledged defect in the implemented path remains unfinished.
 
@@ -41,7 +60,7 @@ The globally installed `internal-dev` extension owns project trust, `.internal-d
 - Give the senior agent a self-contained brief. For an authorized implementation task, allow it to diagnose and advise or to edit and validate directly, whichever best unblocks the outcome. Do not broaden the user's authorization.
 - Follow the skill's fixed provider, model, and thinking contract. Poll it to completion, inspect its reasoning and edits, integrate the result, and independently confirm relevant validation. Never accept its output blindly or substitute a weaker fallback model.
 - If escalation cannot run or cannot resolve the blocker, report the concrete failure, evidence, attempted paths, and exact unfinished scope to the user. Ask only for the decision, access, or external state actually required; do not disguise incomplete work as success or deferred work.
-- When a direct child is expected to own difficult implementation through completion, its root delegation may opt in to subagent controls so it can invoke the senior workflow itself. This grant permits exactly one escalation layer; the senior escalation agent must not receive subagent controls.
+- Senior escalation agents should be launched with subagent controls enabled so they can delegate bounded investigation or implementation support when needed. This grant permits exactly one nested delegation layer; any subagent spawned by the senior agent must not receive further subagent controls.
 - A child agent without escalation tools must return a precise escalation request to its parent. The parent must invoke the senior workflow and carry the result back into the task.
 
 ## Implementation Style
@@ -50,6 +69,8 @@ The globally installed `internal-dev` extension owns project trust, `.internal-d
 - These are design preferences, not functional-programming purity rules. Use mutation, stateful objects, classes, or imperative control flow when they make the code clearer or better match the domain and existing system.
 - Prefer the simplest direct implementation that fully satisfies the contract. If a simpler approach meets the same requirements, use it instead of a baseless or overly complex abstraction. Add an abstraction only when a concrete current requirement, real variation, or an established boundary justifies it.
 - Do not over-abstract to enable possible future functionality unless that extensibility is an explicit contract requirement. Avoid unnecessary enterprise patterns and ceremony: do not create an interface for a single implementation, factories without a real construction problem, service or repository layers without a domain need, wrapper types that add no invariant, or indirection added merely “just in case.”
+- Guard against feature and function creep. Plan only what the user specifies and implement only what the plan specifies. Do not add extra features or functions merely to expand an API for possible future use; if a function is not needed now, do not create it.
+- Avoid function overloading and scope creep: do not flesh out classes beyond what they actually need for the current task.
 - Write terse but readable code. Prefer direct names and obvious data flow over cleverness, hidden magic, excessive comments, or premature reuse.
 
 ## Validation and Reporting
