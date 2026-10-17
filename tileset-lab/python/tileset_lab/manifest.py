@@ -148,6 +148,7 @@ class Root:
         self.identity = self._identity(os.fstat(self.fd))
         self.created_dirs = []
         self.lock_identity = None
+        self._lock_complete = False
 
     @staticmethod
     def _identity(info):
@@ -288,9 +289,13 @@ class Root:
                 os.write(descriptor, marker)
                 os.fsync(descriptor)
             self.lock_identity = self._identity(os.fstat(descriptor))
+            self._lock_complete = False
             self.check_root()
             yield value
-            self.check_root()
+            # CLI performs the final root/ownership check BEFORE irreversible
+            # terminal delivery; do not fail a completed reply on a later check.
+            if not self._lock_complete:
+                self.check_root()
         finally:
             self.lock_identity = None
             os.close(descriptor)

@@ -34,7 +34,8 @@ def image_bytes(content, label):
 def tool_identity():
     """Relocation-independent code and actual imported dependency content identities."""
     folder = Path(__file__).parent
-    files = {p.name: sha256(p.read_bytes()) for p in sorted(folder.glob("*.py"))}
+    files = {p.relative_to(folder).as_posix(): sha256(p.read_bytes())
+             for p in sorted(folder.rglob("*")) if p.is_file() and p.suffix in (".py", ".js")}
     files["requirements.txt"] = sha256((folder.parent / "requirements.txt").read_bytes())
     pillow_dir, numpy_dir = Path(PIL.__file__).parent, Path(np.__file__).parent
     pillow_files = [p for p in pillow_dir.rglob("*") if p.suffix in (".py", ".so")]
