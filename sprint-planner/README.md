@@ -96,10 +96,10 @@ The skill calls `sprint_validate_plan` for generated plans before starting, then
 
 Advanced planning resolves the loaded config and hard-codes the model contract into each plan. The active `default` configuration supplies:
 
-- basic implementation: `openai-codex/gpt-6-luna:high` for documentation, writing, closeout, routine edits, straightforward scripts, and simple non-logic-heavy programming;
-- advanced implementation: `openai-codex/gpt-6-luna:max` for logic-heavy code, vertical slices, advanced programming, and difficult algorithms or mathematics;
-- independent review-and-repair validation of every phase and final integration: `openai-codex/gpt-6-luna` at `xhigh`;
-- roles formerly assigned to GPT-5.6 Luna and GPT-5.6 Sol now use their GPT-6 equivalents (`gpt-6-luna` and `gpt-6-sol`) at the same thinking tiers; the `seniorAgent` base is `openai-codex/gpt-6-sol:high`, with xhigh on the second attempt and `openai-codex/gpt-6-astra:xhigh` on the third attempt or an already repeated-failure hard problem. Explicit user-requested senior model overrides are honored.
+- basic implementation: `deepseek/deepseek-v4-flash:high` for documentation, writing, closeout, routine edits, straightforward scripts, and simple non-logic-heavy programming;
+- advanced implementation: `deepseek/deepseek-v4-pro:max` for logic-heavy code, vertical slices, advanced programming, and difficult algorithms or mathematics;
+- independent review-and-repair validation of every phase and final integration: `openai-codex/gpt-5.6-luna` at `xhigh`;
+- Luna roles use `openai-codex/gpt-5.6-luna` at their configured thinking tiers; the `seniorAgent` base is `openai-codex/gpt-6.1-sol:medium`. Senior escalation follows the senior-agent skill's later-pass policy. Explicit user-requested senior model overrides are honored.
 
 The orchestrate skill consumes the plan-owned model contract: it reads each validated per-phase `basic` or `advanced` assignment from `orchestration.md`, confirms the execution record freezes the same tuple, and explicitly supplies it to every implementation spawn. Only when the input carries no validated model assignments does it fall back to the active configuration's `basicImplementer`, `advancedImplementer`, and `phaseValidator` tuples. It preflights every distinct assigned implementation tuple plus the plan-owned validation tuple before edits. Preflight children receive exactly `tools: []`; implementers and phase/integration validators receive exactly `tools: ["read", "bash", "edit", "write"]`. Only optional senior escalation resolves `seniorAgent` directly from configuration. Each validator fixes in-scope defects itself, reruns checks, and returns only `VERDICT: PASS` or `VERDICT: BLOCKED`; dependents wait for PASS.
 
@@ -115,7 +115,7 @@ Root agents call `sprint_brainstorm` for the same engine-owned lifecycle. Generi
 
 ## Planning and structural gates
 
-Advanced-plan correction runs in order: one decomposition review, one concepts review, one orchestration review, then one independent corrective review per phase. All four review roles use the loaded default configuration's `openai-codex/gpt-6-luna:xhigh` assignment. Each phase reviewer receives corrected `concepts.md`, corrected `orchestration.md`, exactly one phase, and the phase-name index. Component semantics are checked inside their retry boundaries and rechecked on resume before completed checkpoints are trusted.
+Advanced-plan correction runs in order: one decomposition review, one concepts review, one orchestration review, then one independent corrective review per phase. All four review roles use the loaded default configuration's `openai-codex/gpt-5.6-luna:xhigh` assignment. Each phase reviewer receives corrected `concepts.md`, corrected `orchestration.md`, exactly one phase, and the phase-name index. Component semantics are checked inside their retry boundaries and rechecked on resume before completed checkpoints are trusted.
 
 The published plan contains only `concepts.md`, exact structured `orchestration.md`, and flat contiguous `phase-NN-*.md` files; component reviews remain outside `planning/`. Scope is small (2–3 phases), medium (3–5), large (6–10), or extra-large (11–20); most sprints should normally land around 5–10 phases, with lettered subphases and plans up to 20 phases supported when the work genuinely requires them. Planning makes complete plans and does not trim work to save tokens. `orchestration.md` owns the complete phase ledger, dependencies, write targets, contiguous execution waves, exact model assignments, PASS gate, and final integration metadata.
 

@@ -19,9 +19,13 @@ export interface ModelTuple {
 /** Reusable exact tuples; agent assignments below select from this catalog. */
 export const MODEL_PROFILES = {
 	gpt6SolHigh: { provider: "openai-codex", model: "gpt-6-sol", thinking: "high" },
+	gpt61SolMedium: { provider: "openai-codex", model: "gpt-6.1-sol", thinking: "medium" },
 	gpt6SolMedium: { provider: "openai-codex", model: "gpt-6-sol", thinking: "medium" },
 	gpt6SolMax: { provider: "openai-codex", model: "gpt-6-sol", thinking: "max" },
 	terraHigh: { provider: "openai-codex", model: "gpt-5.6-terra", thinking: "high" },
+	gpt56LunaXhigh: { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "xhigh" },
+	gpt56LunaHigh: { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "high" },
+	gpt56LunaMax: { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "max" },
 	gpt6LunaXhigh: { provider: "openai-codex", model: "gpt-6-luna", thinking: "xhigh" },
 	gpt6LunaHigh: { provider: "openai-codex", model: "gpt-6-luna", thinking: "high" },
 	gpt6LunaMax: { provider: "openai-codex", model: "gpt-6-luna", thinking: "max" },

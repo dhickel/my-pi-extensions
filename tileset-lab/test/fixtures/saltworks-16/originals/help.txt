@@ -1,0 +1,3 @@
+saltworks-16: independently drawn native-resolution art.
+Full source roles use inward quarter sampling, not a 5x7 recipe.
+Sprite dimensions: [20, 36]. Complete cliffs are manual rectangles.

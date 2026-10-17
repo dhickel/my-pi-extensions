@@ -2,6 +2,16 @@
 
 Record accepted decisions, justification, alternatives, caveats, affected specifications, source, and review timing.
 
+## 2026-09-29 — Restore GPT-5.6 Luna and update senior-agent base
+
+- Decision: every active sprint-planner Luna assignment uses `openai-codex/gpt-5.6-luna` at its existing thinking tier. The active `seniorAgent` base is `openai-codex/gpt-6.1-sol:medium`. Other Astra and DeepSeek assignments are unchanged.
+- Justification: direct user request to return Luna assignments to GPT-5.6 Luna and use GPT-6.1 Sol medium as the senior-agent base.
+- Alternative and tradeoff: retain the current GPT-6 Luna routes and GPT-6 Sol high base (rejected by user direction). The senior-agent skill's later-pass thinking/escalation policy remains unchanged.
+- Caveat: generated plans and execution records already frozen with older model tuples retain those historical assignments; new plans and fallback routes use the updated configuration.
+- Affected specification: `sprint-planner-suite.md`; `sprint-planner/configs/default.ts`, `sprint-planner/types.ts`, tests, and package documentation.
+- Source: user direction on 2026-09-29.
+- Review timing: when the active agent-model configuration changes.
+
 ## 2026-09-19 — Advanced implementation returns to Luna
 
 - Decision: the active `default` sprint-planner configuration assigns basic implementation to `openai-codex/gpt-5.6-luna:high` and advanced implementation to `openai-codex/gpt-5.6-luna:max`.
@@ -455,3 +465,13 @@ Record accepted decisions, justification, alternatives, caveats, affected specif
 - Affected specification: the subagents README and the exact-tool-policy decision of 2026-07-19.
 - Source: user direction on 2026-07-21.
 - Review timing: if the child forbidden-tool boundary, active-tool semantics, or dynamic capability model changes.
+
+## 2026-10-11 — Tileset authoring uses a skill, Python core, and thin Pi bridge
+
+- Decision: implement Tileset Lab as a progressive authoring skill, deterministic Python backend, and four-tool TypeScript bridge. Consumer manifests own sources, licenses, recipes, frozen artwork, reviews, scenes, and outputs; package resources locate code only. Initial support is the explicit finite `quarter-corner-v1` profile at 16px/32px, complete sprite frames, and complete manual components.
+- Justification: the completed tileset project demonstrated that terrain correctness needs ordered authoring, native painting, exact pixel checks, and independent source/native visual review. Preserve the proven pixel algorithms and keep judgment separate from deterministic execution.
+- Alternatives and tradeoffs: skill-only lacks the accepted typed/cancellable execution boundary; extension-only embeds authoring judgment and duplicates mature Python pixels. Both are rejected for this accepted scope. Unsupported source layouts require explicit future work, not guessed conversion.
+- Caveats: generated/native equality is not visual approval. Missing or stale independent source/draw review blocks exact-bundle publication. Use invocation-owned processes, consumer-root cross-process serialization, and synthetic CC0 distributable fixtures only. No RPGW artwork redistribution, automatic dependency installation, extra worker manager, or unrelated child-shutdown repair.
+- Affected specification: `tileset-lab.md`; package `tileset-lab/` and its ordinary phase plans. This does not amend Sprint Planner configuration or frozen historical model contracts.
+- Source: user acceptance of the tileset-authoring packaging proposal and request for every-stroke native visual validation on 2026-10-11; accepted research record [Tileset Lab research and workflow](../reviews/tileset-lab-research-and-workflow.md), which identifies the separate source-consumer assessment.
+- Review timing: when supported profiles, publication guarantees, runtime ownership, independent review, or distribution boundaries change.

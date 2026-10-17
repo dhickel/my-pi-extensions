@@ -1,0 +1,336 @@
+{
+  "author_id": "cc0-fixture-author:01a12b9c-b128-77bb-9db9-9a16433c24a6",
+  "families": [
+    {
+      "background": "blue shale",
+      "cell_size": 16,
+      "family": "ochre",
+      "foreground": "ochre salt",
+      "mode": "opaque",
+      "pack": "saltworks",
+      "roles": [
+        {
+          "coordinate": [
+            0,
+            1
+          ],
+          "image": "references/art/ochre/background.png",
+          "image_sha256": "0dde687c4ae163ae4a882bbf3dea5f9fc3facc2479256a187350cecaae1cc3f2",
+          "role": "background",
+          "source_sha256": "85321b9179df849527bda3c8f6af196337a5c60f67eada06495ee2d4d06dedae",
+          "visible_rgba_sha256": "be874f7e08cd34d38b73ba4f50a4dc85cd1cf0b398dbd7e034379f86bb975535"
+        },
+        {
+          "coordinate": [
+            4,
+            3
+          ],
+          "image": "references/art/ochre/solid.png",
+          "image_sha256": "71fc12fd8119e2514ccb1781eef8c411f28e7ef344be82393673916ae8551abe",
+          "role": "solid",
+          "source_sha256": "85321b9179df849527bda3c8f6af196337a5c60f67eada06495ee2d4d06dedae",
+          "visible_rgba_sha256": "e8d7525d19f77bb34d1f8443e4c91bb2ff667d7cd2ca50aaebc5bc4deaefb763"
+        },
+        {
+          "coordinate": [
+            3,
+            0
+          ],
+          "image": "references/art/ochre/convex-NW.png",
+          "image_sha256": "2baf8b0db51fca7ac06698aadd4d78e086a1c80d1cc14433c856ba0b720ec5cd",
+          "role": "convex-NW",
+          "source_sha256": "85321b9179df849527bda3c8f6af196337a5c60f67eada06495ee2d4d06dedae",
+          "visible_rgba_sha256": "aff907b19818d3bdc6b2f0d9ce3e6283e90ab10c57379ef4e524d25eb0b13f3f"
+        },
+        {
+          "coordinate": [
+            4,
+            2
+          ],
+          "image": "references/art/ochre/convex-NE.png",
+          "image_sha256": "b40b77c451d417ebbbf4d0ebc28ae44007b7f29613112c5b3e19652588a42dd1",
+          "role": "convex-NE",
+          "source_sha256": "85321b9179df849527bda3c8f6af196337a5c60f67eada06495ee2d4d06dedae",
+          "visible_rgba_sha256": "c8376e5a99d1040bec9bba13aeb1a80f85b0507e3951cf4cfcc07562aa2181f2"
+        },
+        {
+          "coordinate": [
+            3,
+            4
+          ],
+          "image": "references/art/ochre/convex-SE.png",
+          "image_sha256": "7c6157431ff35844fc9f7181a427f6dc3914c7433b311e75a7fdfeb5e99e09e3",
+          "role": "convex-SE",
+          "source_sha256": "85321b9179df849527bda3c8f6af196337a5c60f67eada06495ee2d4d06dedae",
+          "visible_rgba_sha256": "50c7d623ed0cc341f12f357c9249be4576c120bb0850c1fc510aeb86339be388"
+        },
+        {
+          "coordinate": [
+            4,
+            1
+          ],
+          "image": "references/art/ochre/convex-SW.png",
+          "image_sha256": "81f8674cafc1a56e83288cfb198db948cc0d2a7e25f14cc7c48eef80b1ad453c",
+          "role": "convex-SW",
+          "source_sha256": "85321b9179df849527bda3c8f6af196337a5c60f67eada06495ee2d4d06dedae",
+          "visible_rgba_sha256": "6194fbfb7dd3d7f1f239f7422246cfc4496dd10d968e64646c713e5b410617a9"
+        },
+        {
+          "coordinate": [
+            2,
+            0
+          ],
+          "image": "references/art/ochre/edge-N.png",
+          "image_sha256": "c47e8784b172c51b2b6ba188c9ca9b908c20258016f2e1f08fa4c8f80ba528a9",
+          "role": "edge-N",
+          "source_sha256": "85321b9179df849527bda3c8f6af196337a5c60f67eada06495ee2d4d06dedae",
+          "visible_rgba_sha256": "d2b04772184b3dea3c068eedbfdc9681c6bec1b8858e72b892cc8923d25af047"
+        },
+        {
+          "coordinate": [
+            0,
+            4
+          ],
+          "image": "references/art/ochre/edge-E.png",
+          "image_sha256": "cdc3e4e7b2a5d5b514c9cc85fe09efe69a9d1f30b498021612d6070ad17499ef",
+          "role": "edge-E",
+          "source_sha256": "85321b9179df849527bda3c8f6af196337a5c60f67eada06495ee2d4d06dedae",
+          "visible_rgba_sha256": "a99a520e2a78c887fe86d4203ea425a9cfa049f84ff4a0a386b8fed242a5a85b"
+        },
+        {
+          "coordinate": [
+            0,
+            2
+          ],
+          "image": "references/art/ochre/edge-S.png",
+          "image_sha256": "a591262d2d64b1df296ed5950162b93f489c8b3aacfd2f0c29dafd8dedeaa5ab",
+          "role": "edge-S",
+          "source_sha256": "85321b9179df849527bda3c8f6af196337a5c60f67eada06495ee2d4d06dedae",
+          "visible_rgba_sha256": "b12193a3bab61fad25343a02947d2a7e30bf1f8a4873777ff66fb20a3173e31b"
+        },
+        {
+          "coordinate": [
+            1,
+            3
+          ],
+          "image": "references/art/ochre/edge-W.png",
+          "image_sha256": "0c0071b5eb5e2852d9a387aeac7fcd92bc1ca6507a5cfca4f8d621fc66c5c032",
+          "role": "edge-W",
+          "source_sha256": "85321b9179df849527bda3c8f6af196337a5c60f67eada06495ee2d4d06dedae",
+          "visible_rgba_sha256": "d0dac5c9498026f8f013c6ecc7ae4f96bc3fa6f1c1e1c0cd9b529fdb54cd15c2"
+        },
+        {
+          "coordinate": [
+            5,
+            0
+          ],
+          "image": "references/art/ochre/concave-NW.png",
+          "image_sha256": "89a9f1248250580ea082fb98247e87e38495a6c3ac01de2247681a94a1681b46",
+          "role": "concave-NW",
+          "source_sha256": "85321b9179df849527bda3c8f6af196337a5c60f67eada06495ee2d4d06dedae",
+          "visible_rgba_sha256": "9a3f121d12fda632e3a831b5f924bed41e2e7394345b3746348f9e665ac99b0c"
+        },
+        {
+          "coordinate": [
+            6,
+            2
+          ],
+          "image": "references/art/ochre/concave-NE.png",
+          "image_sha256": "fce0387aa0e6e79ab8f096c53450ae482992cf8aac5fa1f807d446f603cb01eb",
+          "role": "concave-NE",
+          "source_sha256": "85321b9179df849527bda3c8f6af196337a5c60f67eada06495ee2d4d06dedae",
+          "visible_rgba_sha256": "d6de7c7180c57bd4bf7e9c6876e4e13f4b719bf5fb7a2713649e7a08438693c9"
+        },
+        {
+          "coordinate": [
+            5,
+            4
+          ],
+          "image": "references/art/ochre/concave-SE.png",
+          "image_sha256": "beafc5266df31a07e0362bc591bc738ff4b9bb0669caa936855f6e1f42fc2e22",
+          "role": "concave-SE",
+          "source_sha256": "85321b9179df849527bda3c8f6af196337a5c60f67eada06495ee2d4d06dedae",
+          "visible_rgba_sha256": "4f1ad5d07d4eb219b3ce19ac435c917bd4d4363228a6e5cd0039aa7adfcf9b5a"
+        },
+        {
+          "coordinate": [
+            2,
+            1
+          ],
+          "image": "references/art/ochre/concave-SW.png",
+          "image_sha256": "6aa07b1807b829bb513cce19b1f233bb7000cdf8ef8a290178fdc1efc246995a",
+          "role": "concave-SW",
+          "source_sha256": "85321b9179df849527bda3c8f6af196337a5c60f67eada06495ee2d4d06dedae",
+          "visible_rgba_sha256": "01583ebaed7fc80e53166992145da307849a9c667d1e8eaf45d33c45513c8757"
+        }
+      ],
+      "source": "terrain"
+    },
+    {
+      "background": "empty authored alpha",
+      "cell_size": 16,
+      "family": "grains",
+      "foreground": "salt grains",
+      "mode": "alpha",
+      "pack": "saltworks",
+      "roles": [
+        {
+          "coordinate": [
+            0,
+            0
+          ],
+          "image": "references/art/grains/background.png",
+          "image_sha256": "4d9128a103d231fb5a331fd9d9ae6dd77949fc23aa0c3ce7be302daba561daff",
+          "role": "background",
+          "source_sha256": "85321b9179df849527bda3c8f6af196337a5c60f67eada06495ee2d4d06dedae",
+          "visible_rgba_sha256": "5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef"
+        },
+        {
+          "coordinate": [
+            2,
+            2
+          ],
+          "image": "references/art/grains/solid.png",
+          "image_sha256": "52ee71a0a0d310a9ae3a758d6b892eceda223ed2a3ba54aed93e92d310dd415e",
+          "role": "solid",
+          "source_sha256": "85321b9179df849527bda3c8f6af196337a5c60f67eada06495ee2d4d06dedae",
+          "visible_rgba_sha256": "0c343bbfe7f80ac0fdaa70fbf6161ed887b1cf62e07390cdc1d4dcbfb25d0cee"
+        },
+        {
+          "coordinate": [
+            2,
+            4
+          ],
+          "image": "references/art/grains/convex-NW.png",
+          "image_sha256": "2eab84ab86880bc1cbf817a06e979cf1c23931e954dfedd362cd406703752f44",
+          "role": "convex-NW",
+          "source_sha256": "85321b9179df849527bda3c8f6af196337a5c60f67eada06495ee2d4d06dedae",
+          "visible_rgba_sha256": "540053cf4bb4f1fdf69e5204b509156e2cc34f33b77375688b248beae72d6e2c"
+        },
+        {
+          "coordinate": [
+            6,
+            1
+          ],
+          "image": "references/art/grains/convex-NE.png",
+          "image_sha256": "d84042130ba1471e0910f52a4ea37b0ae2829d3f1bef54d138d52cca06948670",
+          "role": "convex-NE",
+          "source_sha256": "85321b9179df849527bda3c8f6af196337a5c60f67eada06495ee2d4d06dedae",
+          "visible_rgba_sha256": "9112682252b1b8cfc463be4e7e2cee3dc093e0a461ccf6fe6393a43d68d49d71"
+        },
+        {
+          "coordinate": [
+            5,
+            3
+          ],
+          "image": "references/art/grains/convex-SE.png",
+          "image_sha256": "d71c734693e1f844705159e6e52274660fb94f77e1cf5f5d8ede493b036f0649",
+          "role": "convex-SE",
+          "source_sha256": "85321b9179df849527bda3c8f6af196337a5c60f67eada06495ee2d4d06dedae",
+          "visible_rgba_sha256": "bc326a19d17e62efc6bb1805f4a262f6e97b5accd40b5bdf9f82acb8c5d9968b"
+        },
+        {
+          "coordinate": [
+            6,
+            0
+          ],
+          "image": "references/art/grains/convex-SW.png",
+          "image_sha256": "b725f990f93daf7b2db1fda94f4e310bd72c8a0b9cc6588ae6db816b5dff047d",
+          "role": "convex-SW",
+          "source_sha256": "85321b9179df849527bda3c8f6af196337a5c60f67eada06495ee2d4d06dedae",
+          "visible_rgba_sha256": "4ebb1a9d1ce01e45279da495b821062cd2623ddae66952c0af307dc182c3b2ae"
+        },
+        {
+          "coordinate": [
+            2,
+            3
+          ],
+          "image": "references/art/grains/edge-N.png",
+          "image_sha256": "2941410ef16dca5116a58f51a3f07f2dd5b2de9ac5b2f9d3fb00c83f09334410",
+          "role": "edge-N",
+          "source_sha256": "85321b9179df849527bda3c8f6af196337a5c60f67eada06495ee2d4d06dedae",
+          "visible_rgba_sha256": "86d243cd1edc3ff170d3c0fbed9ae4eec35043a2219b3610e7b2470c7da55063"
+        },
+        {
+          "coordinate": [
+            3,
+            1
+          ],
+          "image": "references/art/grains/edge-E.png",
+          "image_sha256": "9e0e146e584c236447e7c8d4e9dbc95715e21c9002ce2dc6c90266e0ece3cdde",
+          "role": "edge-E",
+          "source_sha256": "85321b9179df849527bda3c8f6af196337a5c60f67eada06495ee2d4d06dedae",
+          "visible_rgba_sha256": "e516edc2c2aa01ed9d597934294ff7d396f2d950ee0b0777adc78aa703e95e72"
+        },
+        {
+          "coordinate": [
+            4,
+            4
+          ],
+          "image": "references/art/grains/edge-S.png",
+          "image_sha256": "22fa20ee61e21047d4939a75ce5294619b578e8bf2a7340b659f2cc14443659a",
+          "role": "edge-S",
+          "source_sha256": "85321b9179df849527bda3c8f6af196337a5c60f67eada06495ee2d4d06dedae",
+          "visible_rgba_sha256": "14909a5cf0002fb68b6770d82d0c29cfa8b4894162006123729e4a7e43025eab"
+        },
+        {
+          "coordinate": [
+            4,
+            0
+          ],
+          "image": "references/art/grains/edge-W.png",
+          "image_sha256": "1f736b202aa9df9c4dc7da93e1db275445f096146a761650fd895d295c76ec8c",
+          "role": "edge-W",
+          "source_sha256": "85321b9179df849527bda3c8f6af196337a5c60f67eada06495ee2d4d06dedae",
+          "visible_rgba_sha256": "7c8aaf6f55350f75bb5bd2eb8603813ffa5975d45aa20dab3b832f07d23a5a6b"
+        },
+        {
+          "coordinate": [
+            5,
+            2
+          ],
+          "image": "references/art/grains/concave-NW.png",
+          "image_sha256": "e37033fca1da84ba959ecc0a6c3e457594166d93d9a598cc0ec89f8fc72fcf96",
+          "role": "concave-NW",
+          "source_sha256": "85321b9179df849527bda3c8f6af196337a5c60f67eada06495ee2d4d06dedae",
+          "visible_rgba_sha256": "b5a826e8c4059582319b7bb520aeb0b9138fe118be9e740512b8a3c2ecc2dbff"
+        },
+        {
+          "coordinate": [
+            1,
+            0
+          ],
+          "image": "references/art/grains/concave-NE.png",
+          "image_sha256": "937606833fadbd582ff479db56ac988d49dce4b52736e0e4b2ee6c6fc31ed1ea",
+          "role": "concave-NE",
+          "source_sha256": "85321b9179df849527bda3c8f6af196337a5c60f67eada06495ee2d4d06dedae",
+          "visible_rgba_sha256": "5b2a98f1bd40dd070bbb644f4f8a6e1869eaf89ea3908eb6f6f79bdc8de75ce2"
+        },
+        {
+          "coordinate": [
+            6,
+            3
+          ],
+          "image": "references/art/grains/concave-SE.png",
+          "image_sha256": "92dc12d73de64c160a86a28a8a7a313c0c80b6fe2968ab9fb30773e49f2b54e0",
+          "role": "concave-SE",
+          "source_sha256": "85321b9179df849527bda3c8f6af196337a5c60f67eada06495ee2d4d06dedae",
+          "visible_rgba_sha256": "dffad7859921601beca94c3246666efb9bf25aa03d75ebb1ec5d90f1237511b8"
+        },
+        {
+          "coordinate": [
+            1,
+            2
+          ],
+          "image": "references/art/grains/concave-SW.png",
+          "image_sha256": "fbc925fd24bba8b7b4df67d32d32a701e2e8f276530ff09eee37ff9934d7c0b1",
+          "role": "concave-SW",
+          "source_sha256": "85321b9179df849527bda3c8f6af196337a5c60f67eada06495ee2d4d06dedae",
+          "visible_rgba_sha256": "e5f2e008b1992a7873d9790388aa70b3b6eda6427a6ae8e2956897b637d166ad"
+        }
+      ],
+      "source": "terrain"
+    }
+  ],
+  "schema_version": 1
+}

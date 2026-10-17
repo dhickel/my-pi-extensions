@@ -1,0 +1,176 @@
+{
+  "components": [
+    {
+      "id": "root-wall",
+      "kind": "tall-cliff",
+      "name": "Full root-laced bank",
+      "rect": [
+        8,
+        8,
+        40,
+        128
+      ],
+      "source": "parts"
+    },
+    {
+      "id": "trellis",
+      "kind": "stamp",
+      "name": "Orchard trellis",
+      "rect": [
+        64,
+        0,
+        80,
+        64
+      ],
+      "source": "parts"
+    },
+    {
+      "id": "beacon",
+      "kind": "stamp",
+      "name": "Woven beacon stand",
+      "rect": [
+        64,
+        80,
+        64,
+        96
+      ],
+      "source": "parts"
+    }
+  ],
+  "families": [
+    {
+      "background": "loam",
+      "foreground": "orchard turf",
+      "id": "grass",
+      "mode": "opaque",
+      "name": "Orchard turf / loam",
+      "roles": {
+        "background": [
+          5,
+          3
+        ],
+        "concave-NE": [
+          1,
+          1
+        ],
+        "concave-NW": [
+          6,
+          3
+        ],
+        "concave-SE": [
+          7,
+          1
+        ],
+        "concave-SW": [
+          2,
+          3
+        ],
+        "convex-NE": [
+          0,
+          0
+        ],
+        "convex-NW": [
+          1,
+          2
+        ],
+        "convex-SE": [
+          1,
+          3
+        ],
+        "convex-SW": [
+          4,
+          1
+        ],
+        "edge-E": [
+          6,
+          2
+        ],
+        "edge-N": [
+          7,
+          0
+        ],
+        "edge-S": [
+          2,
+          0
+        ],
+        "edge-W": [
+          3,
+          2
+        ],
+        "solid": [
+          4,
+          0
+        ]
+      },
+      "source": "terrain"
+    },
+    {
+      "background": "empty authored alpha",
+      "foreground": "rose seeds",
+      "id": "seeds",
+      "mode": "alpha",
+      "name": "Rose seed scatter",
+      "roles": {
+        "background": [
+          2,
+          1
+        ],
+        "concave-NE": [
+          4,
+          3
+        ],
+        "concave-NW": [
+          0,
+          1
+        ],
+        "concave-SE": [
+          5,
+          0
+        ],
+        "concave-SW": [
+          4,
+          2
+        ],
+        "convex-NE": [
+          5,
+          2
+        ],
+        "convex-NW": [
+          3,
+          0
+        ],
+        "convex-SE": [
+          6,
+          0
+        ],
+        "convex-SW": [
+          7,
+          3
+        ],
+        "edge-E": [
+          1,
+          0
+        ],
+        "edge-N": [
+          6,
+          1
+        ],
+        "edge-S": [
+          0,
+          3
+        ],
+        "edge-W": [
+          2,
+          2
+        ],
+        "solid": [
+          3,
+          3
+        ]
+      },
+      "source": "terrain"
+    }
+  ],
+  "pack": "orchard",
+  "schema_version": 1
+}

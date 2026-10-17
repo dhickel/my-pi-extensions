@@ -1,0 +1,176 @@
+{
+  "components": [
+    {
+      "id": "salt-cliff",
+      "kind": "tall-cliff",
+      "name": "Complete salt escarpment",
+      "rect": [
+        0,
+        0,
+        24,
+        64
+      ],
+      "source": "parts"
+    },
+    {
+      "id": "arch",
+      "kind": "stamp",
+      "name": "Weathered survey arch",
+      "rect": [
+        32,
+        0,
+        48,
+        32
+      ],
+      "source": "parts"
+    },
+    {
+      "id": "cairn",
+      "kind": "stamp",
+      "name": "Survey cairn",
+      "rect": [
+        32,
+        40,
+        32,
+        40
+      ],
+      "source": "parts"
+    }
+  ],
+  "families": [
+    {
+      "background": "blue shale",
+      "foreground": "ochre salt",
+      "id": "ochre",
+      "mode": "opaque",
+      "name": "Ochre salt / blue shale",
+      "roles": {
+        "background": [
+          0,
+          1
+        ],
+        "concave-NE": [
+          6,
+          2
+        ],
+        "concave-NW": [
+          5,
+          0
+        ],
+        "concave-SE": [
+          5,
+          4
+        ],
+        "concave-SW": [
+          2,
+          1
+        ],
+        "convex-NE": [
+          4,
+          2
+        ],
+        "convex-NW": [
+          3,
+          0
+        ],
+        "convex-SE": [
+          3,
+          4
+        ],
+        "convex-SW": [
+          4,
+          1
+        ],
+        "edge-E": [
+          0,
+          4
+        ],
+        "edge-N": [
+          2,
+          0
+        ],
+        "edge-S": [
+          0,
+          2
+        ],
+        "edge-W": [
+          1,
+          3
+        ],
+        "solid": [
+          4,
+          3
+        ]
+      },
+      "source": "terrain"
+    },
+    {
+      "background": "empty authored alpha",
+      "foreground": "salt grains",
+      "id": "grains",
+      "mode": "alpha",
+      "name": "Loose salt grains",
+      "roles": {
+        "background": [
+          0,
+          0
+        ],
+        "concave-NE": [
+          1,
+          0
+        ],
+        "concave-NW": [
+          5,
+          2
+        ],
+        "concave-SE": [
+          6,
+          3
+        ],
+        "concave-SW": [
+          1,
+          2
+        ],
+        "convex-NE": [
+          6,
+          1
+        ],
+        "convex-NW": [
+          2,
+          4
+        ],
+        "convex-SE": [
+          5,
+          3
+        ],
+        "convex-SW": [
+          6,
+          0
+        ],
+        "edge-E": [
+          3,
+          1
+        ],
+        "edge-N": [
+          2,
+          3
+        ],
+        "edge-S": [
+          4,
+          4
+        ],
+        "edge-W": [
+          4,
+          0
+        ],
+        "solid": [
+          2,
+          2
+        ]
+      },
+      "source": "terrain"
+    }
+  ],
+  "pack": "saltworks",
+  "schema_version": 1
+}
