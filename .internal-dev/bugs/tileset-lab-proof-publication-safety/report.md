@@ -36,6 +36,7 @@ Native comparison is exact Qt premultiplied-buffer equality, not necessarily ide
 ## Evidence
 
 - GitHub mirror: https://github.com/dhickel/my-pi-extensions/issues/5
+- 2026-10-17 user-authorized WIP integration: initial full suite passed 102/102; post-commit full rerun failed 1 of 102 at `test_real_rename_then_int_term_cancellation_restores_existing_or_absent_selector:138`, unexpected non-`Cancelled:` error text after real selector rename. A focused rerun passed. The failed assertion prevents later rollback assertions from establishing selector recovery for that invocation. Cause remains unestablished; do not label this harmless flakiness or claim final all-green validation. Logs: `/tmp/pi-extensions-tileset-{merge-test,final-test,cancellation-recheck}.log`. No product code or test repair was made under this Git-only authorization.
 - Independent report/request and reproduction paths above.
 - `coverage-binding-discrepancies.json`, `both-current-guards.json`, helper audit summaries/logs.
 - Both full current guards BLOCKED before review, with all85818 frozen v6 files unchanged.
