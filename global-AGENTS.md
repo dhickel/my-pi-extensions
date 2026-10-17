@@ -19,12 +19,20 @@ The globally installed `internal-dev` extension owns project trust, `.internal-d
 
 ## Plan and Completion Contract
 
+- When planning or implementing features, do not add CI, dependency pinning, or complex build workflows unless the user explicitly requests them or they are explicitly required by the domain and its integrations. Do not include them merely as generic best practices; when required by the domain or an integration, state the concrete requirement and keep the solution minimal.
 - Treat an accepted plan, current specifications, user constraints, and acceptance criteria as the implementation contract. Complete every in-scope requirement and validation step; do not silently skip, collapse, replace, or postpone them.
 - Never substitute a stub, placeholder, empty method, hard-coded fake, commented-out path, TODO, or claimed future follow-up for required behavior.
 - Do not add speculative methods, interfaces, extension hooks, configuration, generalized frameworks, or public API surface for possible future needs. Keep out-of-scope ideas out of the implementation and route them through the project workflow only when required.
 - Difficulty, uncertainty, elapsed effort, or a failed attempt is not a reason to defer work. Investigate, escalate, integrate the result, and continue.
 - If evidence shows that the accepted plan is incorrect, unsafe, or incompatible with a governing contract, stop the affected path and escalate. Do not materially change scope, behavior, architecture, or public contracts until the conflict and proposed revision have been presented to the user and approved. Continue unaffected work when it is safe to do so.
 - Never claim completion while requested behavior, required validation, or an acknowledged defect in the implemented path remains unfinished.
+
+## Branch, Commit, Validate, Merge Workflow
+
+- Unless the user explicitly specifies otherwise, perform every phase or unit of work on its own dedicated Git branch, not directly on the integration branch.
+- Commit each completed sub-unit of a larger unit or phase as a separate, focused commit on that unit's branch. Preserve unrelated changes and never include them in those commits.
+- Follow the workflow: **branch → commits → validate → merge**. Complete the required validation for the entire phase or unit before merging; do not merge work with unresolved validation failures.
+- After validation passes, merge the unit's branch into the active development branch, or into `master` when that is the integration branch, unless the user specifies a different target or asks not to merge. Do not leave validated work unmerged unless instructed otherwise.
 
 ## Senior Escalation
 
@@ -38,10 +46,10 @@ The globally installed `internal-dev` extension owns project trust, `.internal-d
 
 ## Implementation Style
 
-- Preserve coherent repository conventions and language idioms. When choosing a new implementation shape, favor modern constructs, explicit data, data-driven behavior, transformations over scattered control flow, immutability where practical, small composable functions, and side effects contained at clear boundaries.
+- The user prefers direct, clean, data-driven, functional-inspired modern programming approaches over abstraction-heavy designs and enterprise patterns. Preserve coherent repository conventions and language idioms; favor explicit data, transformations over scattered control flow, immutability where practical, small composable functions, and side effects contained at clear boundaries.
 - These are design preferences, not functional-programming purity rules. Use mutation, stateful objects, classes, or imperative control flow when they make the code clearer or better match the domain and existing system.
-- Prefer the simplest coherent solution that fully satisfies current requirements. Add an abstraction only when present behavior, real variation, or an established boundary justifies it.
-- Avoid enterprise ceremony: do not create an interface for a single implementation, factories without a real construction problem, service or repository layers without a domain need, wrapper types that add no invariant, or indirection added merely “just in case.”
+- Prefer the simplest direct implementation that fully satisfies the contract. If a simpler approach meets the same requirements, use it instead of a baseless or overly complex abstraction. Add an abstraction only when a concrete current requirement, real variation, or an established boundary justifies it.
+- Do not over-abstract to enable possible future functionality unless that extensibility is an explicit contract requirement. Avoid unnecessary enterprise patterns and ceremony: do not create an interface for a single implementation, factories without a real construction problem, service or repository layers without a domain need, wrapper types that add no invariant, or indirection added merely “just in case.”
 - Write terse but readable code. Prefer direct names and obvious data flow over cleverness, hidden magic, excessive comments, or premature reuse.
 
 ## Validation and Reporting
