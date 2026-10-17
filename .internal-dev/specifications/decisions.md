@@ -2,6 +2,16 @@
 
 Record accepted decisions, justification, alternatives, caveats, affected specifications, source, and review timing.
 
+## 2026-09-29 — Restore GPT-5.6 Luna and update senior-agent base
+
+- Decision: every active sprint-planner Luna assignment uses `openai-codex/gpt-5.6-luna` at its existing thinking tier. The active `seniorAgent` base is `openai-codex/gpt-6.1-sol:medium`. Other Astra and DeepSeek assignments are unchanged.
+- Justification: direct user request to return Luna assignments to GPT-5.6 Luna and use GPT-6.1 Sol medium as the senior-agent base.
+- Alternative and tradeoff: retain the current GPT-6 Luna routes and GPT-6 Sol high base (rejected by user direction). The senior-agent skill's later-pass thinking/escalation policy remains unchanged.
+- Caveat: generated plans and execution records already frozen with older model tuples retain those historical assignments; new plans and fallback routes use the updated configuration.
+- Affected specification: `sprint-planner-suite.md`; `sprint-planner/configs/default.ts`, `sprint-planner/types.ts`, tests, and package documentation.
+- Source: user direction on 2026-09-29.
+- Review timing: when the active agent-model configuration changes.
+
 ## 2026-09-19 — Advanced implementation returns to Luna
 
 - Decision: the active `default` sprint-planner configuration assigns basic implementation to `openai-codex/gpt-5.6-luna:high` and advanced implementation to `openai-codex/gpt-5.6-luna:max`.
